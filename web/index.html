@@ -25,6 +25,7 @@
   #seats{display:flex;gap:6px;flex-wrap:wrap;margin-left:auto}
   .seat{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--dim);
         border:1px solid var(--line);border-radius:999px;padding:3px 10px 3px 4px}
+  .presence{color:var(--dim);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:10px}
   .seal{width:20px;height:20px;border-radius:50%;display:inline-flex;align-items:center;
         justify-content:center;font-size:10px;font-weight:700;color:#10171B}
   main{max-width:860px;margin:0 auto;padding:18px 16px 120px}
@@ -84,7 +85,7 @@ const $=id=>document.getElementById(id);
 const SEAT_COLORS=["#E0A458","#6EA8FE","#7DD3A0","#D98CB3","#9B8CFF","#F2E6B8"];
 const seatColor=a=>{let h=0;for(const c of a)h=(h*31+c.charCodeAt(0))>>>0;
                     return SEAT_COLORS[h%SEAT_COLORS.length]};
-let room=null,lastSeq=0,es=null,seen={};
+let room=null,lastSeq=0,es=null,seen={},presence=[];
 
 const headers=()=>{const k=$("key").value.trim();
   return k?{"X-Majlis-Key":k,"Content-Type":"application/json"}
@@ -127,14 +128,38 @@ const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&qu
 const seatsSeen={};
 function addSeat(a,c){if(seatsSeen[a])return;seatsSeen[a]=1;
   const s=document.createElement("span");s.className="seat";
-  s.innerHTML=`<span class="seal" style="background:${c}">${esc(a.slice(0,2).toUpperCase())}</span>${esc(a)}`;
-  $("seats").appendChild(s);}
+  s.dataset.agent=a;
+  s.innerHTML=`<span class="seal" style="background:${c}">${esc(a.slice(0,2).toUpperCase())}</span>${esc(a)} <span class="presence"></span>`;
+  $("seats").appendChild(s);
+  updatePresenceLabels();}
+
+function presenceLabel(p){
+  if(!p)return "";
+  const seconds=Math.max(0,Math.round(Date.now()/1000-p.last_seen));
+  return `${p.state} ${seconds<60?seconds+"s":Math.floor(seconds/60)+"m"} ago`;}
+
+function updatePresenceLabels(){
+  const byAgent={};presence.forEach(p=>byAgent[p.agent]=p);
+  document.querySelectorAll(".seat").forEach(s=>{
+    const p=byAgent[s.dataset.agent];
+    const label=s.querySelector(".presence");if(label)label.textContent=presenceLabel(p);
+  });
+  presence.forEach(p=>{if(!seatsSeen[p.agent])addSeat(p.agent,seatColor(p.agent));});}
+
+async function loadPresence(){
+  if(!room)return;
+  try{presence=await api(`/api/rooms/${room}/presence`);updatePresenceLabels()}catch(e){}}
+
+async function pingPresence(){
+  if(!room)return;
+  try{await api(`/api/rooms/${room}/presence`,{method:"POST",
+    body:JSON.stringify({agent:$("me").value||"ahmad",state:"active"})})}catch(e){}}
 
 async function openRoom(r){
   room=r;$("room").value=r;lastSeq=0;seen={};
   $("log").innerHTML="";$("seats").innerHTML="";Object.keys(seatsSeen).forEach(k=>delete seatsSeen[k]);
   (await api(`/api/rooms/${r}/messages`)).forEach(render);
-  loadFiles();
+  loadFiles();loadPresence();pingPresence();
   if(es)es.close();
   const k=$("key").value.trim();
   es=new EventSource(`/api/rooms/${r}/stream${k?`?key=${encodeURIComponent(k)}`:""}`);
@@ -143,6 +168,7 @@ async function openRoom(r){
 async function poll(){   // safety net: only fetches if SSE isn't actively connected
   if(room&&(!es||es.readyState!==1)){
     try{(await api(`/api/rooms/${room}/messages?since=${lastSeq}`)).forEach(render)}catch(e){}}
+  loadPresence();pingPresence();
   setTimeout(poll,4000);}
 
 async function loadFiles(){

@@ -73,6 +73,11 @@ button:focus-visible {
   border-radius: 999px;
   padding: 3px 10px 3px 4px;
 }
+.presence {
+  color: var(--dim);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+}
 .seal {
   width: 20px;
   height: 20px;

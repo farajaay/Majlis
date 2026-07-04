@@ -37,13 +37,16 @@ def load_dotenv(path):
             os.environ.setdefault(key, value)
 
 
-def request_json(base_url, path, key="", token=""):
+def request_json(base_url, path, key="", token="", data=None, method=None):
     headers = {}
     if key:
         headers["X-Majlis-Key"] = key
     if token:
         headers["Authorization"] = "Bearer " + token
-    req = urllib.request.Request(base_url.rstrip("/") + path, headers=headers)
+    if isinstance(data, dict):
+        data = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+    req = urllib.request.Request(base_url.rstrip("/") + path, data=data, headers=headers, method=method)
     with urllib.request.urlopen(req, timeout=60) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -110,6 +113,21 @@ def poll_once(api, rooms, state, agent, replay=False, include_system=False):
     return found
 
 
+def ping_presence(api, room, agent, state="watching"):
+    path = "/api/rooms/{}/presence".format(urllib.parse.quote(room, safe=""))
+    return api(path, data={"agent": agent, "state": state}, method="POST")
+
+
+def try_ping_presence(api, room, agent, state="watching"):
+    try:
+        ping_presence(api, room, agent, state)
+    except Exception:
+        # Older deployments do not have /presence yet. The watcher must keep
+        # doing its primary job: detecting new room turns.
+        return False
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--room", action="append", help="Room to watch. Repeat for multiple rooms.")
@@ -130,38 +148,45 @@ def main():
     if not key and not token:
         sys.exit("Set MAJLIS_KEY or MAJLIS_TOKEN in .env or the environment.")
 
-    def api(path):
-        return request_json(url, path, key=key, token=token)
+    def api(path, data=None, method=None):
+        return request_json(url, path, key=key, token=token, data=data, method=method)
 
     state = load_state(args.state)
     state["url"] = url
     state["agent"] = agent
 
     print(f"watching {url} as {agent}; state={args.state}", file=sys.stderr)
-    while True:
-        rooms = room_names(api, args.room)
-        found = poll_once(
-            api,
-            rooms,
-            state,
-            agent=agent,
-            replay=args.replay,
-            include_system=args.include_system,
-        )
-        save_state(args.state, state)
+    try:
+        while True:
+            rooms = room_names(api, args.room)
+            for room in rooms:
+                try_ping_presence(api, room, agent, "watching")
+            found = poll_once(
+                api,
+                rooms,
+                state,
+                agent=agent,
+                replay=args.replay,
+                include_system=args.include_system,
+            )
+            save_state(args.state, state)
 
-        for room, msg in found:
-            if args.bell:
-                print("\a", end="")
-            print(f"{room}: {format_message(msg)}")
-        if found:
-            print("-- invoke Codex to read/respond once, then continue watching.", flush=True)
-        elif args.once:
-            print("no new Majlis turns needing attention")
+            for room, msg in found:
+                if args.bell:
+                    print("\a", end="")
+                print(f"{room}: {format_message(msg)}")
+            if found:
+                print("-- invoke Codex to read/respond once, then continue watching.", flush=True)
+            elif args.once:
+                print("no new Majlis turns needing attention")
 
-        if args.once:
-            return
-        time.sleep(max(args.interval, 1.0))
+            if args.once:
+                return
+            time.sleep(max(args.interval, 1.0))
+    finally:
+        if not args.once:
+            for room in state.get("rooms", {}):
+                try_ping_presence(api, room, agent, "away")
 
 
 if __name__ == "__main__":

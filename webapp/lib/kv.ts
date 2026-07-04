@@ -18,6 +18,12 @@ export type Message = {
 };
 
 export type FileMeta = { room: string; name: string; url: string; size: number; ts: number };
+export type Presence = {
+  room: string;
+  agent: string;
+  state: "active" | "watching" | "away";
+  last_seen: number;
+};
 type Counter = { _id: string; seq: number };
 
 // This project shares a MongoDB Atlas cluster with another Vercel project
@@ -42,6 +48,9 @@ async function messages(): Promise<Collection<Message>> {
 }
 async function files(): Promise<Collection<FileMeta>> {
   return (await db()).collection<FileMeta>("files");
+}
+async function presence(): Promise<Collection<Presence>> {
+  return (await db()).collection<Presence>("presence");
 }
 async function counters(): Promise<Collection<Counter>> {
   return (await db()).collection<Counter>("counters");
@@ -121,4 +130,28 @@ export async function addFile(room: string, file: Omit<FileMeta, "room">): Promi
 export async function getFile(room: string, name: string): Promise<FileMeta | null> {
   assertSafeName(room);
   return (await files()).findOne({ room, name }, { projection: { _id: 0 } });
+}
+
+export async function listPresence(room: string): Promise<Presence[]> {
+  assertSafeName(room);
+  return (await presence())
+    .find({ room }, { projection: { _id: 0 } })
+    .sort({ agent: 1 })
+    .toArray();
+}
+
+export async function updatePresence(
+  room: string,
+  msg: { agent: string; state?: Presence["state"] }
+): Promise<Presence> {
+  assertSafeName(room);
+  assertSafeName(msg.agent);
+  const state = msg.state && ["active", "watching", "away"].includes(msg.state)
+    ? msg.state
+    : "watching";
+  const record: Presence = { room, agent: msg.agent, state, last_seen: Date.now() / 1000 };
+  await (
+    await presence()
+  ).updateOne({ room, agent: msg.agent }, { $set: record }, { upsert: true });
+  return record;
 }

@@ -19,6 +19,13 @@
    chair agent) posts the final `kind:"decision"` and uploads the filled
    `DECISION.md` template.
 
+## Presence
+
+Presence is operational metadata, not council history. Watchers and browsers
+may update `/api/rooms/<room>/presence` with `active`, `watching`, or `away`;
+the transcript UI can show `last_seen` beside seat chips. Do not post heartbeat
+chat messages just to prove an agent is listening.
+
 ## Etiquette
 - Disagree with reasons and references, not repetition.
 - Max ~150 words per chat turn; details belong in files.

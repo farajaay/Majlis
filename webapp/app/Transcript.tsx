@@ -12,6 +12,11 @@ type Message = {
 };
 type FileMeta = { name: string; size: number; ts: number };
 type RoomSummary = { room: string; messages: number; agents: string[]; last: number | null };
+type Presence = {
+  agent: string;
+  state: "active" | "watching" | "away";
+  last_seen: number;
+};
 
 const SEAT_COLORS = ["#E0A458", "#6EA8FE", "#7DD3A0", "#D98CB3", "#9B8CFF", "#F2E6B8"];
 function seatColor(agent: string) {
@@ -31,6 +36,7 @@ export function Transcript({ me }: { me: string }) {
   const [room, setRoom] = useState<string>("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [files, setFiles] = useState<FileMeta[]>([]);
+  const [presence, setPresence] = useState<Presence[]>([]);
   const [text, setText] = useState("");
   const lastSeq = useRef(0);
   const seenSeqs = useRef<Set<number>>(new Set());
@@ -50,6 +56,7 @@ export function Transcript({ me }: { me: string }) {
     setRoom(r);
     setMessages([]);
     setFiles([]);
+    setPresence([]);
     lastSeq.current = 0;
     seenSeqs.current = new Set();
   }, []);
@@ -63,9 +70,15 @@ export function Transcript({ me }: { me: string }) {
     let stop = false;
     const tick = async () => {
       try {
-        const [msgs, fs]: [Message[], FileMeta[]] = await Promise.all([
+        await api(`/api/rooms/${room}/presence`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agent: me, state: "active" }),
+        });
+        const [msgs, fs, ps]: [Message[], FileMeta[], Presence[]] = await Promise.all([
           api(`/api/rooms/${room}/messages?since=${lastSeq.current}`),
           api(`/api/rooms/${room}/files`),
+          api(`/api/rooms/${room}/presence`),
         ]);
         if (stop) return;
         const fresh = msgs.filter((m) => !seenSeqs.current.has(m.seq));
@@ -75,6 +88,7 @@ export function Transcript({ me }: { me: string }) {
           setMessages((cur) => [...cur, ...fresh]);
         }
         setFiles(fs);
+        setPresence(ps);
       } catch {
         /* transient */
       }
@@ -114,7 +128,14 @@ export function Transcript({ me }: { me: string }) {
     openRoom(n);
   };
 
+  const presenceByAgent = new Map(presence.map((p) => [p.agent, p]));
+  const activePresence = presence.filter((p) => !messages.some((m) => m.agent === p.agent));
   const seatsSeen = new Set<string>();
+  const labelPresence = (p?: Presence) => {
+    if (!p) return "";
+    const seconds = Math.max(0, Math.round(Date.now() / 1000 - p.last_seen));
+    return `${p.state} ${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m`} ago`;
+  };
 
   return (
     <>
@@ -150,8 +171,18 @@ export function Transcript({ me }: { me: string }) {
                   {m.agent.slice(0, 2).toUpperCase()}
                 </span>
                 {m.agent}
+                <span className="presence">{labelPresence(presenceByAgent.get(m.agent))}</span>
               </span>
             ))}
+          {activePresence.map((p) => (
+            <span className="seat" key={p.agent}>
+              <span className="seal" style={{ background: seatColor(p.agent) }}>
+                {p.agent.slice(0, 2).toUpperCase()}
+              </span>
+              {p.agent}
+              <span className="presence">{labelPresence(p)}</span>
+            </span>
+          ))}
           <span style={{ fontSize: 12, color: "var(--dim)" }}>{me}</span>
           <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
             guide

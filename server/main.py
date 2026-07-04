@@ -68,6 +68,23 @@ class MsgIn(BaseModel):
     refs: list[str] = []        # filenames or decision ids referenced
 
 
+class PresenceIn(BaseModel):
+    agent: str
+    state: str = "watching"     # active | watching | away
+
+
+def _read_presence(room: str) -> dict[str, dict]:
+    f = _room_dir(room) / "presence.json"
+    if not f.exists():
+        return {}
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+def _write_presence(room: str, presence: dict[str, dict]):
+    f = _room_dir(room) / "presence.json"
+    f.write_text(json.dumps(presence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 @app.get("/api/rooms")
 def list_rooms(request: Request):
     _check_key(request)
@@ -86,6 +103,23 @@ def list_rooms(request: Request):
 def get_messages(room: str, request: Request, since: int = 0):
     _check_key(request)
     return _read_messages(room, since)
+
+
+@app.get("/api/rooms/{room}/presence")
+def get_presence(room: str, request: Request):
+    _check_key(request)
+    return sorted(_read_presence(room).values(), key=lambda p: p["agent"])
+
+
+@app.post("/api/rooms/{room}/presence")
+def post_presence(room: str, msg: PresenceIn, request: Request):
+    _check_key(request)
+    agent = _safe(msg.agent)
+    state = msg.state if msg.state in {"active", "watching", "away"} else "watching"
+    presence = _read_presence(room)
+    presence[agent] = {"agent": agent, "state": state, "last_seen": time.time()}
+    _write_presence(room, presence)
+    return presence[agent]
 
 
 @app.post("/api/rooms/{room}/messages")
