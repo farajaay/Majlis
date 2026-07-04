@@ -19,6 +19,9 @@ export default function SignInPage({
       <button className="signin-btn" onClick={() => signIn("github", { callbackUrl: "/" })}>
         Sign in with GitHub
       </button>
+      <a href="/guide" style={{ fontSize: 13, color: "var(--dim)" }}>
+        New here? Read the guide →
+      </a>
     </div>
   );
 }

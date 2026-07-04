@@ -153,6 +153,9 @@ export function Transcript({ me }: { me: string }) {
               </span>
             ))}
           <span style={{ fontSize: 12, color: "var(--dim)" }}>{me}</span>
+          <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
+            guide
+          </a>
           <button onClick={() => signOut({ callbackUrl: "/signin" })} title="Sign out">
             sign out
           </button>
