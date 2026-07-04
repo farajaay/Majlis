@@ -1,0 +1,150 @@
+"""Majlis — multi-agent council server.
+
+Run:  uvicorn server.main:app --host 0.0.0.0 --port 8787
+Auth: set MAJLIS_KEY env var to require X-Majlis-Key header on all /api routes.
+Data: workspace/rooms/<room>/messages.jsonl  +  workspace/rooms/<room>/files/
+"""
+import asyncio, json, os, re, time
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+ROOT = Path(__file__).resolve().parent.parent
+WS = ROOT / "workspace" / "rooms"
+WS.mkdir(parents=True, exist_ok=True)
+KEY = os.environ.get("MAJLIS_KEY", "")
+
+app = FastAPI(title="Majlis")
+_subscribers: dict[str, list[asyncio.Queue]] = {}
+
+
+def _safe(name: str) -> str:
+    if not re.fullmatch(r"[a-zA-Z0-9_\-\.]{1,64}", name):
+        raise HTTPException(400, "invalid name")
+    return name
+
+
+def _room_dir(room: str) -> Path:
+    d = WS / _safe(room)
+    (d / "files").mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _check_key(request: Request):
+    if KEY and request.headers.get("x-majlis-key") != KEY:
+        raise HTTPException(401, "bad or missing X-Majlis-Key")
+
+
+def _read_messages(room: str, since: int = 0) -> list[dict]:
+    f = _room_dir(room) / "messages.jsonl"
+    if not f.exists():
+        return []
+    out = []
+    with f.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            m = json.loads(line)
+            if m["seq"] > since:
+                out.append(m)
+    return out
+
+
+class MsgIn(BaseModel):
+    agent: str
+    content: str
+    kind: str = "chat"          # chat | decision | system | file
+    refs: list[str] = []        # filenames or decision ids referenced
+
+
+@app.get("/api/rooms")
+def list_rooms(request: Request):
+    _check_key(request)
+    rooms = []
+    for d in sorted(WS.iterdir()):
+        if d.is_dir():
+            msgs = _read_messages(d.name)
+            agents = sorted({m["agent"] for m in msgs})
+            last = msgs[-1]["ts"] if msgs else None
+            rooms.append({"room": d.name, "messages": len(msgs),
+                          "agents": agents, "last": last})
+    return rooms
+
+
+@app.get("/api/rooms/{room}/messages")
+def get_messages(room: str, request: Request, since: int = 0):
+    _check_key(request)
+    return _read_messages(room, since)
+
+
+@app.post("/api/rooms/{room}/messages")
+async def post_message(room: str, msg: MsgIn, request: Request):
+    _check_key(request)
+    d = _room_dir(room)
+    f = d / "messages.jsonl"
+    seq = sum(1 for _ in f.open(encoding="utf-8")) if f.exists() else 0
+    record = {"seq": seq + 1, "ts": time.time(), "agent": _safe(msg.agent),
+              "kind": msg.kind, "content": msg.content, "refs": msg.refs}
+    with f.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    for q in _subscribers.get(room, []):
+        q.put_nowait(record)
+    return record
+
+
+@app.get("/api/rooms/{room}/stream")
+async def stream(room: str, request: Request):
+    _check_key(request)
+    q: asyncio.Queue = asyncio.Queue()
+    _subscribers.setdefault(room, []).append(q)
+
+    async def gen():
+        try:
+            yield "retry: 3000\n\n"
+            while True:
+                try:
+                    rec = await asyncio.wait_for(q.get(), timeout=25)
+                    yield f"data: {json.dumps(rec, ensure_ascii=False)}\n\n"
+                except asyncio.TimeoutError:
+                    yield ": ping\n\n"
+        finally:
+            _subscribers.get(room, []).remove(q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
+@app.get("/api/rooms/{room}/files")
+def list_files(room: str, request: Request):
+    _check_key(request)
+    fdir = _room_dir(room) / "files"
+    return [{"name": p.name, "size": p.stat().st_size, "ts": p.stat().st_mtime}
+            for p in sorted(fdir.iterdir()) if p.is_file()]
+
+
+@app.post("/api/rooms/{room}/files")
+async def upload_file(room: str, request: Request,
+                      agent: str = "unknown", file: UploadFile = File(...)):
+    _check_key(request)
+    name = _safe(Path(file.filename).name)
+    dest = _room_dir(room) / "files" / name
+    dest.write_bytes(await file.read())
+    await post_message(room, MsgIn(agent=agent, kind="file",
+                                   content=f"shared file: {name}",
+                                   refs=[name]), request)
+    return {"name": name, "size": dest.stat().st_size}
+
+
+@app.get("/api/rooms/{room}/files/{name}")
+def get_file(room: str, name: str, request: Request):
+    _check_key(request)
+    p = _room_dir(room) / "files" / _safe(name)
+    if not p.exists():
+        raise HTTPException(404, "no such file")
+    return FileResponse(p)
+
+
+app.mount("/", StaticFiles(directory=ROOT / "web", html=True), name="web")
