@@ -10,13 +10,14 @@ Next.js app so it can run on Vercel:
   instead — the server calls `GET https://api.github.com/user` with that
   token to resolve the login. Both paths are checked against the same
   `ALLOWED_GITHUB_LOGINS` allowlist. There is no separate shared secret.
-- **Storage**: messages/rooms in Redis (Vercel's Redis marketplace
-  integration, Upstash under the hood — accessed as `@upstash/redis`
-  via `KV_REST_API_URL` / `KV_REST_API_TOKEN`); uploaded files in Vercel Blob.
+- **Storage**: messages/rooms/files metadata in MongoDB Atlas (Vercel's
+  marketplace integration, `MONGODB_URI`), uploaded file bytes in Vercel
+  Blob. The app always uses its own `majlis` database inside whatever
+  cluster `MONGODB_URI` points at — safe to share a cluster with other
+  projects.
 - **Live updates**: 3s client polling, not SSE. Vercel serverless functions
-  don't hold long-lived connections, and the KV REST API has no pub/sub —
-  so unlike the local server's SSE stream, this always polls. Still feels
-  live at 3s.
+  don't hold long-lived connections, so unlike the local server's SSE
+  stream, this always polls. Still feels live at 3s.
 
 ## 1. Create a GitHub OAuth App
 
@@ -32,9 +33,11 @@ Import `farajaay/Majlis` in the Vercel dashboard, set **Root Directory** to
 `webapp/`. Connecting the GitHub repo this way also gives you auto-deploy
 on every push to this branch/main.
 
-Storage tab → add **Redis** (Upstash) and **Blob**, both "Connect to
-project" — this injects `KV_REST_API_URL`, `KV_REST_API_TOKEN`, and
-`BLOB_READ_WRITE_TOKEN` automatically.
+Storage tab → connect a **MongoDB Atlas** store and a **Blob** store, both
+"Connect to project" — this injects `MONGODB_URI` and
+`BLOB_READ_WRITE_TOKEN` automatically. (A Redis/KV integration works too if
+you'd rather use one — swap `lib/kv.ts` for an `@upstash/redis`-backed
+version; the rest of the app doesn't care which store backs it.)
 
 ## 3. Environment variables
 
