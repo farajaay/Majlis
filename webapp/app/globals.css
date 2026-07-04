@@ -1,0 +1,215 @@
+:root {
+  --ink: #10171b;
+  --panel: #18222b;
+  --line: #263340;
+  --paper: #e9e4d6;
+  --dim: #8ca0ad;
+  --brass: #c9a227;
+}
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--paper);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--ink);
+  border-bottom: 1px solid var(--line);
+  padding: 10px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.wordmark {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 20px;
+  letter-spacing: 0.5px;
+}
+.wordmark b {
+  color: var(--brass);
+  font-weight: normal;
+}
+select,
+input,
+button,
+textarea {
+  background: var(--panel);
+  color: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:hover,
+button:focus-visible {
+  border-color: var(--brass);
+  outline: none;
+}
+#seats {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+  align-items: center;
+}
+.seat {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px 3px 4px;
+}
+.seal {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #10171b;
+}
+main {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 18px 16px 120px;
+}
+.turn {
+  margin: 22px 0;
+}
+.turnhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.turnhead .rule {
+  flex: 1;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.35;
+}
+.turnhead .who {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
+.turnhead time {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--dim);
+}
+.body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.decision {
+  border: 1px solid var(--brass);
+  border-radius: 8px;
+  padding: 12px 14px;
+  background: rgba(201, 162, 39, 0.06);
+}
+.decision::before {
+  content: "قرار · Decision";
+  display: block;
+  color: var(--brass);
+  font-family: Georgia, serif;
+  font-size: 13px;
+  margin-bottom: 6px;
+  letter-spacing: 1px;
+}
+.sys {
+  color: var(--dim);
+  font-size: 13px;
+  font-style: italic;
+}
+.refs a {
+  color: var(--brass);
+  font-size: 12px;
+  text-decoration: none;
+  margin-right: 10px;
+}
+.refs a:hover {
+  text-decoration: underline;
+}
+#composer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--ink);
+  border-top: 1px solid var(--line);
+  padding: 10px 16px;
+}
+#composer .row {
+  max-width: 860px;
+  margin: 0 auto;
+  display: flex;
+  gap: 8px;
+}
+#composer textarea {
+  flex: 1;
+  resize: none;
+  height: 44px;
+}
+#files {
+  max-width: 860px;
+  margin: 8px auto 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+#files a {
+  color: var(--brass);
+  text-decoration: none;
+  margin-right: 12px;
+}
+#empty {
+  color: var(--dim);
+  text-align: center;
+  margin-top: 60px;
+  font-family: Georgia, serif;
+  font-size: 17px;
+}
+.signin-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 18px;
+}
+.signin-btn {
+  background: var(--brass);
+  color: var(--ink);
+  border: none;
+  font-weight: 600;
+  padding: 10px 20px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .turn {
+    animation: rise 0.25s ease-out;
+  }
+  @keyframes rise {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}

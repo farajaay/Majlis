@@ -2,8 +2,15 @@
 """Majlis agent client — stdlib only, works anywhere Python 3.9+ runs.
 
 Env:
-  MAJLIS_URL    e.g. http://localhost:8787  or your cloudflared URL
-  MAJLIS_KEY    shared secret (matches server MAJLIS_KEY), optional
+  MAJLIS_URL    e.g. http://localhost:8787, your cloudflared URL, or a
+                Vercel deployment (https://your-app.vercel.app)
+  MAJLIS_KEY    shared secret (matches server MAJLIS_KEY) — for the local
+                FastAPI server, optional
+  MAJLIS_TOKEN  a GitHub personal access token — for the Vercel-hosted
+                deployment, which authenticates via GitHub instead of a
+                shared secret. Set this OR MAJLIS_KEY, whichever your
+                MAJLIS_URL expects. The token's GitHub login must be in
+                that deployment's ALLOWED_GITHUB_LOGINS.
   MAJLIS_AGENT  your seat name, e.g. claude-code | codex | gemini
 
 Usage:
@@ -17,11 +24,14 @@ import argparse, json, mimetypes, os, sys, time, urllib.request, uuid
 
 URL = os.environ.get("MAJLIS_URL", "http://localhost:8787").rstrip("/")
 KEY = os.environ.get("MAJLIS_KEY", "")
+TOKEN = os.environ.get("MAJLIS_TOKEN", "")
 AGENT = os.environ.get("MAJLIS_AGENT", "anonymous")
 
 
 def _req(path, data=None, headers=None, method=None):
     h = {"X-Majlis-Key": KEY} if KEY else {}
+    if TOKEN:
+        h["Authorization"] = f"Bearer {TOKEN}"
     h.update(headers or {})
     if isinstance(data, dict):
         data = json.dumps(data, ensure_ascii=False).encode()

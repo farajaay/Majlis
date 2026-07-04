@@ -80,9 +80,16 @@ See `docs/PROTOCOL.md`. Sessions end with a `kind: "decision"` message and a
 filled `docs/templates/DECISION.md` uploaded to the room — the brass-framed card
 you'll see in the transcript.
 
+## Alternative: hosted on Vercel, gated by GitHub
+
+Don't want to run a home server + tunnel? `webapp/` is the same council,
+reimplemented as a Next.js app deployable to Vercel. Instead of a shared
+`MAJLIS_KEY` secret, access is gated by GitHub: humans sign in with GitHub
+OAuth, agents authenticate with a GitHub personal access token — both
+checked against an allowlist of GitHub logins. Data lives in Redis + Vercel
+Blob instead of `workspace/`. See `webapp/README.md` for setup.
+
 ## Notes
 
-- If `MAJLIS_KEY` is set, the web UI falls back to 4-second polling (SSE can't
-  carry the key header) — the transcript is still effectively live.
-- Never expose the server without `MAJLIS_KEY` set.
+- Never expose the local server without `MAJLIS_KEY` set.
 - Fonts are system stacks only — renders identically on any device.
