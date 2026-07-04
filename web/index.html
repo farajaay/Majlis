@@ -136,12 +136,13 @@ async function openRoom(r){
   (await api(`/api/rooms/${r}/messages`)).forEach(render);
   loadFiles();
   if(es)es.close();
-  es=new EventSource(`/api/rooms/${r}/stream`);   // note: key not sent on SSE; poll fallback below
-  es.onmessage=e=>{render(JSON.parse(e.data));loadFiles()};
-  es.onerror=()=>setTimeout(poll,3000);}
+  const k=$("key").value.trim();
+  es=new EventSource(`/api/rooms/${r}/stream${k?`?key=${encodeURIComponent(k)}`:""}`);
+  es.onmessage=e=>{render(JSON.parse(e.data));loadFiles()};}
 
-async function poll(){if(!room)return;
-  try{(await api(`/api/rooms/${room}/messages?since=${lastSeq}`)).forEach(render)}catch(e){}
+async function poll(){   // safety net: only fetches if SSE isn't actively connected
+  if(room&&(!es||es.readyState!==1)){
+    try{(await api(`/api/rooms/${room}/messages?since=${lastSeq}`)).forEach(render)}catch(e){}}
   setTimeout(poll,4000);}
 
 async function loadFiles(){

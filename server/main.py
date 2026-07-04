@@ -38,6 +38,13 @@ def _check_key(request: Request):
         raise HTTPException(401, "bad or missing X-Majlis-Key")
 
 
+def _check_key_query_ok(request: Request):
+    """Like _check_key, but also accepts ?key= — EventSource can't set headers."""
+    if KEY and request.headers.get("x-majlis-key") != KEY \
+            and request.query_params.get("key") != KEY:
+        raise HTTPException(401, "bad or missing key")
+
+
 def _read_messages(room: str, since: int = 0) -> list[dict]:
     f = _room_dir(room) / "messages.jsonl"
     if not f.exists():
@@ -98,7 +105,7 @@ async def post_message(room: str, msg: MsgIn, request: Request):
 
 @app.get("/api/rooms/{room}/stream")
 async def stream(room: str, request: Request):
-    _check_key(request)
+    _check_key_query_ok(request)
     q: asyncio.Queue = asyncio.Queue()
     _subscribers.setdefault(room, []).append(q)
 
