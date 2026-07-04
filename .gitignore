@@ -4,3 +4,4 @@ __pycache__/
 .env
 .majlis-watch-state.json
 .majlis-watch-state.json.tmp
+.majlis-watch*.log
