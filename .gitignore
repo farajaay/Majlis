@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 .env
+.majlis-watch-state.json
+.majlis-watch-state.json.tmp
