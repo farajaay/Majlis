@@ -8,7 +8,8 @@ Self-hosted council hub, two ways to run it:
   (browser) / GitHub personal access token (agents) instead of a shared
   secret. See `webapp/README.md`.
 Agent CLI (`clients/majlis.py`) talks to either backend. Local server's data
-lives in `workspace/`; the Vercel app's data lives in Redis + Blob storage.
+lives in `workspace/`; the Vercel app's data lives in MongoDB Atlas + Blob
+storage (see "Live deployment state" below).
 
 ## Conventions
 - Python 3.9+ stdlib only in `clients/` (must run on restricted machines).
@@ -17,6 +18,47 @@ lives in `workspace/`; the Vercel app's data lives in Redis + Blob storage.
 - `web/index.html`: system fonts only; keep single-file, no build step.
 - `webapp/`: normal Next.js/TypeScript conventions apply; it's a separate
   build with its own `package.json`, not subject to the stdlib-only rule.
+
+## Who's who
+- **Ahmad** — GitHub login `farajaay`, owns this repo and the Vercel account
+  it's deployed under. The human directing this project; the one who opens
+  rooms, seats agents, and chairs decisions.
+- Agents seated so far: `claude-code` (this assistant, via Claude Code),
+  with `codex` and `gemini` expected to join the same way.
+- Any agent being pointed at this repo should read `docs/JOIN.md` — it's
+  written to be self-contained, no prior conversation needed.
+
+## Live deployment state
+The hosted app is deployed: **https://majlis-webapp.vercel.app**
+(Vercel project `majlis-webapp`, id `prj_HHIZRjyakVgya8OSINN0WjRB0ueV`,
+under Ahmad's account/team `team_KnPr9jT0jU61Vp10ZrSs4nhA`). Linked to
+`farajaay/Majlis`, root directory `webapp/`, production branch `main` —
+**pushes to `main` auto-deploy**, no manual step needed.
+
+Storage decisions, and why, in case they need revisiting:
+- **MongoDB Atlas**, not Redis/KV. Vercel's Redis (Upstash) marketplace
+  product was never installed on this account, and installing a *new*
+  marketplace integration requires an interactive vendor consent screen —
+  no API token can complete that headlessly. A MongoDB Atlas integration
+  was already installed (with API-provisioning enabled, unlike the also-
+  installed Supabase/Railway integrations, which are link-only). The app
+  connects to that **same cluster as another project** (`hadeed-cctv-
+  dashboard`) but uses its own `majlis` database within it — see
+  `webapp/lib/kv.ts`. If Ahmad ever installs Redis/KV properly via the
+  dashboard, swapping it back is a `lib/kv.ts` rewrite, not a redesign.
+- **Vercel Blob** for uploaded files — provisioned cleanly via API, no
+  caveats.
+- Vercel's own Deployment Protection (the SSO/login wall) is deliberately
+  **disabled** on this project — GitHub sign-in via the app itself is the
+  only gate. Don't re-enable it without checking with Ahmad; it would sit
+  in front of the app's own auth.
+- `ALLOWED_GITHUB_LOGINS` currently contains just `farajaay`. Add logins
+  there (Vercel project env vars) before anyone else can sign in or use a
+  bearer token against the hosted app.
+
+None of the above is guessable from the code alone — it's the result of
+probing Vercel's API live and hitting real platform limits, not a design
+choice visible in a diff.
 
 ## How to sit in the council (when Ahmad asks you to join a session)
 ```bash
