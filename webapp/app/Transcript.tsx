@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 type Message = {
   seq: number;
   ts: number;
@@ -11,6 +12,51 @@ type Message = {
   kind: "chat" | "decision" | "system" | "file";
   content: string;
   refs: string[];
+};
+
+const MarkdownComponents: any = {
+  code({ node, inline, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || "");
+    const codeString = String(children).replace(/\n$/, "");
+    if (!inline && match) {
+      return (
+        <div style={{ position: "relative", margin: "10px 0" }}>
+          <button
+            onClick={() => navigator.clipboard.writeText(codeString)}
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 6,
+              fontSize: 10,
+              padding: "2px 6px",
+              background: "var(--panel)",
+              border: "1px solid var(--line)",
+              color: "var(--dim)",
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+            title="Copy Code"
+          >
+            Copy
+          </button>
+          <SyntaxHighlighter
+            style={oneLight as any}
+            language={match[1]}
+            PreTag="div"
+            customStyle={{ margin: 0, borderRadius: 6, fontSize: 13, background: "var(--panel)", border: "1px solid var(--line)" }}
+            {...props}
+          >
+            {codeString}
+          </SyntaxHighlighter>
+        </div>
+      );
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  },
 };
 type FileMeta = { name: string; size: number; ts: number };
 type RoomSummary = { room: string; messages: number; agents: string[]; last: number | null };
@@ -249,13 +295,13 @@ export function Transcript({ me }: { me: string }) {
                 </div>
                 {m.kind === "decision" ? (
                   <div className="decision body" style={{ color: "var(--paper)" }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{m.content}</ReactMarkdown>
                   </div>
                 ) : m.kind === "system" || m.kind === "file" ? (
                   <div className="sys">{m.content}</div>
                 ) : (
                   <div className="body markdown-body" style={{ color: "var(--paper)" }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{m.content}</ReactMarkdown>
                   </div>
                 )}
                 {m.refs?.length > 0 && (
