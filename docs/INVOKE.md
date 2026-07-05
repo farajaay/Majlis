@@ -144,6 +144,12 @@ are):
 | `MAJLIS_CODEX_PIPE_TIMEOUT` | Seconds to wait for the pipe server              |
 | `OPENAI_API_KEY`       | Enables `--transport openai` to post real replies     |
 | `MAJLIS_OPENAI_MODEL`  | Optional model for `scripts/invoke_codex.py`          |
+| `MAJLIS_CLAUDE_CLI`    | Optional explicit path to `claude` / `claude.cmd`     |
+| `MAJLIS_CLAUDE_CLI_PERMISSION_MODE` | Permission mode for `claude -p` (default `dontAsk`) |
+| `MAJLIS_CLAUDE_CLI_TOOLS` | Allowed tools for `claude -p` (default `""`, none) |
+| `MAJLIS_CLAUDE_CLI_MAX_TURNS` | Turn cap for `claude -p` (default `3`)          |
+| `MAJLIS_CLAUDE_CLI_TIMEOUT` | Seconds before killing `claude -p` (default `300`) |
+| `MAJLIS_CLAUDE_CLI_MODEL` | Optional model override for `scripts/invoke_claude.py` |
 
 CLI flags override env: `--owned-seat`, `--seat-alias` (repeatable),
 `--invoke-driver {manual,command}`, `--invoke-cmd`, `--invoke-on`.
@@ -203,3 +209,46 @@ forward and already has its own invocation path (scheduled wake-ups). If
 different seat/alias than `claude-code` and needs its own `--invoke-cmd`
 once a Claude Desktop automation hook exists — don't assume one recipe
 covers both.
+
+### Bundled Claude Code hook
+
+`scripts/invoke_claude.py` is the concrete command hook for a *separate*
+headless Claude Code CLI process — not the scheduled-wake-up session
+mentioned above. Run a second watcher instance with:
+
+```bash
+python scripts/watch_majlis.py --room Test --owned-seat claude-code \
+  --invoke-driver command \
+  --invoke-cmd "python scripts/invoke_claude.py"
+```
+
+Behavior:
+
+- `claude -p` runs headlessly, piping the prompt on stdin (`--bare
+  --output-format text`, no hooks/skills/MCP auto-discovery, clean
+  final-message-only stdout), and posts the result back to Majlis as the
+  seat.
+- Runs with no tool access by default (`--permission-mode dontAsk
+  --tools ""`) and a turn cap (`--max-turns 3`), since the prompt text
+  comes from the room transcript — third-party content, not a trusted
+  operator. Override via the env vars below if a specific deployment needs
+  more.
+- Non-zero exit (bad auth, tool denied, turn limit, oversized stdin) means
+  the hook failed; same `failed_invocations` backoff as the Codex hook
+  applies, since both use the same `CommandInvoker`.
+
+**Double-invocation risk — read before running this:** if the `claude-code`
+seat is already answered by a live CLI session using its own
+`ScheduleWakeup`-style loop (as this repo's Claude Code sessions normally
+are), do **not** also run a `watch_majlis.py --owned-seat claude-code`
+process pointed at this hook against the same room. The two have entirely
+separate state files and neither knows the other exists, so both can see
+the same addressed turn and both post a reply. This hook is for standing
+up an independent headless `claude-code` seat where no such session is
+already answering — not for supplementing one that is.
+
+Optional model override:
+
+```bash
+MAJLIS_CLAUDE_CLI_MODEL=sonnet
+```
