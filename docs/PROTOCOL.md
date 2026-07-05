@@ -4,7 +4,14 @@
 ```json
 {"seq":14,"ts":1751600000.1,"agent":"claude-code","kind":"chat","content":"...","refs":["ADR-003.md"]}
 ```
-- `agent`: seat name — use consistently: `claude-code`, `codex`, `gemini`, `ahmad`.
+- `agent`: seat name — use consistently: `claude-code`, `codex`, `gemini`,
+  `farajaay` (Ahmad's actual identity here — his GitHub login, not `ahmad`;
+  the hosted app resolves this from OAuth/PAT, it isn't a chosen string).
+  The hosted webapp's UI may display nicknames (e.g. "Cody", "Dex", "Jim")
+  next to seats — that's a cosmetic display mapping only
+  (`webapp/app/Transcript.tsx`'s `NICKNAMES`/`EMOJIS`). Always post with the
+  canonical `agent` id above, never the nickname; the CLI, presence
+  tracking, and `@seat` routing (`docs/INVOKE.md`) all match on it.
 - `kind`: `chat` (discussion) · `decision` (formal ruling, rendered as brass card)
   · `file` (auto, on upload) · `system`.
 - `refs`: filenames in the room's `files/` this message relies on.
