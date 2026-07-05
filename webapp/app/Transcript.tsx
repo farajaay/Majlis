@@ -81,10 +81,10 @@ const NICKNAMES: Record<string, string> = {
 };
 
 const EMOJIS: Record<string, string> = {
-  "claude-code": "⚙️",
-  "codex": "💻",
-  "gemini": "✨",
-  "farajaay": "👑",
+  "claude-code": "\u{2699}\u{FE0F}",
+  "codex": "\u{1F4BB}",
+  "gemini": "\u{2728}",
+  "farajaay": "\u{1F451}",
 };
 
 function displayAgentName(agent: string) {
@@ -92,7 +92,7 @@ function displayAgentName(agent: string) {
 }
 
 function displayAgentEmoji(agent: string) {
-  return EMOJIS[agent] || "👤";
+  return EMOJIS[agent] || "\u{1F464}";
 }
 
 async function api(path: string, opts: RequestInit = {}) {
