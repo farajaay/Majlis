@@ -27,6 +27,17 @@ function seatColor(agent: string) {
   return SEAT_COLORS[h % SEAT_COLORS.length];
 }
 
+const NICKNAMES: Record<string, string> = {
+  "claude-code": "Cody",
+  "codex": "Dex",
+  "gemini": "Jim",
+  "farajaay": "Ahmad",
+};
+
+function displayAgentName(agent: string) {
+  return NICKNAMES[agent] || agent;
+}
+
 async function api(path: string, opts: RequestInit = {}) {
   const r = await fetch(path, { ...opts, credentials: "include" });
   if (!r.ok) throw new Error(await r.text());
@@ -174,9 +185,9 @@ export function Transcript({ me }: { me: string }) {
               return (
                 <span className="seat" key={m.agent} title={presenceTooltip(p)}>
                   <span className="seal" style={{ background: seatColor(m.agent) }}>
-                    {m.agent.slice(0, 2).toUpperCase()}
+                    {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
                   </span>
-                  {m.agent}
+                  {displayAgentName(m.agent)}
                   {!isStale(p) && <span className={`status-dot ${p?.state || "away"}`} />}
                 </span>
               );
@@ -186,13 +197,13 @@ export function Transcript({ me }: { me: string }) {
             .map((p) => (
               <span className="seat" key={p.agent} title={presenceTooltip(p)}>
                 <span className="seal" style={{ background: seatColor(p.agent) }}>
-                  {p.agent.slice(0, 2).toUpperCase()}
+                  {displayAgentName(p.agent).slice(0, 2).toUpperCase()}
                 </span>
-                {p.agent}
+                {displayAgentName(p.agent)}
                 <span className={`status-dot ${p.state}`} />
               </span>
             ))}
-          <span style={{ fontSize: 12, color: "var(--dim)" }}>{me}</span>
+          <span style={{ fontSize: 12, color: "var(--dim)" }}>{displayAgentName(me)}</span>
           <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
             guide
           </a>
@@ -230,9 +241,9 @@ export function Transcript({ me }: { me: string }) {
               <div className="turn" style={{ color: c }} key={m.seq}>
                 <div className="turnhead">
                   <span className="seal" style={{ background: c }}>
-                    {m.agent.slice(0, 2).toUpperCase()}
+                    {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="who">{m.agent}</span>
+                  <span className="who">{displayAgentName(m.agent)}</span>
                   <span className="rule"></span>
                   <time>{t}</time>
                 </div>
