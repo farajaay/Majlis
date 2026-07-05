@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 type Message = {
   seq: number;
@@ -236,13 +238,13 @@ export function Transcript({ me }: { me: string }) {
                 </div>
                 {m.kind === "decision" ? (
                   <div className="decision body" style={{ color: "var(--paper)" }}>
-                    {m.content}
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                   </div>
                 ) : m.kind === "system" || m.kind === "file" ? (
                   <div className="sys">{m.content}</div>
                 ) : (
-                  <div className="body" style={{ color: "var(--paper)" }}>
-                    {m.content}
+                  <div className="body markdown-body" style={{ color: "var(--paper)" }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
                   </div>
                 )}
                 {m.refs?.length > 0 && (

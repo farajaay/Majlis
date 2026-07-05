@@ -235,3 +235,37 @@ main {
     }
   }
 }
+
+/* Markdown Styles */
+.markdown-body p, .decision p {
+  margin: 0 0 10px 0;
+}
+.markdown-body p:last-child, .decision p:last-child {
+  margin-bottom: 0;
+}
+.markdown-body ul, .markdown-body ol, .decision ul, .decision ol {
+  margin: 0 0 10px 0;
+  padding-left: 24px;
+}
+.markdown-body li, .decision li {
+  margin-bottom: 4px;
+}
+.markdown-body code, .decision code {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.markdown-body pre, .decision pre {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 10px 0;
+}
+.markdown-body pre code, .decision pre code {
+  background: transparent;
+  padding: 0;
+}
