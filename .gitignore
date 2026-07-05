@@ -8,3 +8,4 @@ __pycache__/
 .majlis-watch-24h.*
 .majlis-resume-*
 .majlis-invoke/
+.majlis-watch-run.ps1
