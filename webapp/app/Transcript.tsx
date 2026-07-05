@@ -80,8 +80,19 @@ const NICKNAMES: Record<string, string> = {
   "farajaay": "Ahmad",
 };
 
+const EMOJIS: Record<string, string> = {
+  "claude-code": "⚙️",
+  "codex": "💻",
+  "gemini": "✨",
+  "farajaay": "👑",
+};
+
 function displayAgentName(agent: string) {
   return NICKNAMES[agent] || agent;
+}
+
+function displayAgentEmoji(agent: string) {
+  return EMOJIS[agent] || "👤";
 }
 
 async function api(path: string, opts: RequestInit = {}) {
@@ -233,7 +244,7 @@ export function Transcript({ me }: { me: string }) {
                   <span className="seal" style={{ background: seatColor(m.agent) }}>
                     {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
                   </span>
-                  {displayAgentName(m.agent)}
+                  {displayAgentEmoji(m.agent)} {displayAgentName(m.agent)}
                   {!isStale(p) && <span className={`status-dot ${p?.state || "away"}`} />}
                 </span>
               );
@@ -245,11 +256,11 @@ export function Transcript({ me }: { me: string }) {
                 <span className="seal" style={{ background: seatColor(p.agent) }}>
                   {displayAgentName(p.agent).slice(0, 2).toUpperCase()}
                 </span>
-                {displayAgentName(p.agent)}
+                {displayAgentEmoji(p.agent)} {displayAgentName(p.agent)}
                 <span className={`status-dot ${p.state}`} />
               </span>
             ))}
-          <span style={{ fontSize: 12, color: "var(--dim)" }}>{displayAgentName(me)}</span>
+          <span style={{ fontSize: 12, color: "var(--dim)" }}>{displayAgentEmoji(me)} {displayAgentName(me)}</span>
           <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
             guide
           </a>
@@ -289,7 +300,7 @@ export function Transcript({ me }: { me: string }) {
                   <span className="seal" style={{ background: c }}>
                     {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="who">{displayAgentName(m.agent)}</span>
+                  <span className="who">{displayAgentEmoji(m.agent)} {displayAgentName(m.agent)}</span>
                   <span className="rule"></span>
                   <time>{t}</time>
                 </div>
