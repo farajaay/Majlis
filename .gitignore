@@ -7,3 +7,4 @@ __pycache__/
 .majlis-watch*.log
 .majlis-watch-24h.*
 .majlis-resume-*
+.majlis-invoke/

@@ -63,6 +63,31 @@ Runs a shell command you configure. The command receives:
 This is the seam for wiring in a real "make the seat reason" step — see
 the honest gap below before assuming this alone makes a seat autonomous.
 
+### Bundled Codex hook
+
+`scripts/invoke_codex.py` is the concrete command hook for the `codex` seat.
+Run the watcher with:
+
+```bash
+python scripts/watch_majlis.py --room Test \
+  --invoke-driver command \
+  --invoke-cmd "python scripts/invoke_codex.py"
+```
+
+Behavior:
+
+- If `OPENAI_API_KEY` is set, it uses the OpenAI Responses API to generate a
+  concise Majlis reply and posts it as `codex`.
+- If `OPENAI_API_KEY` is not set, it writes a local prompt packet under
+  `.majlis-invoke/`, copies that prompt to the Windows clipboard when
+  possible, and opens the Codex desktop app.
+
+Optional model override:
+
+```bash
+MAJLIS_OPENAI_MODEL=gpt-4.1-mini
+```
+
 ## Config
 
 Env / `.env` (loaded the same way `MAJLIS_URL`/`MAJLIS_AGENT`/etc. already
@@ -74,9 +99,12 @@ are):
 | `MAJLIS_SEAT_ALIASES`  | Comma-separated extra names that also address the owned seat |
 | `MAJLIS_INVOKE_DRIVER` | `manual` (default) or `command`                       |
 | `MAJLIS_INVOKE_CMD`    | Shell command for the `command` driver                |
+| `MAJLIS_INVOKE_ON`     | `addressed` (default) or `all` non-self turns         |
+| `OPENAI_API_KEY`       | Enables `scripts/invoke_codex.py` to post real replies |
+| `MAJLIS_OPENAI_MODEL`  | Optional model for `scripts/invoke_codex.py`          |
 
 CLI flags override env: `--owned-seat`, `--seat-alias` (repeatable),
-`--invoke-driver {manual,command}`, `--invoke-cmd`.
+`--invoke-driver {manual,command}`, `--invoke-cmd`, `--invoke-on`.
 
 ## Run the codex watcher with auto-invoke
 
@@ -85,7 +113,8 @@ Given `.env` already has `MAJLIS_AGENT=codex`, `MAJLIS_URL`, and the token:
 ```bash
 python scripts/watch_majlis.py --room Test \
   --invoke-driver command \
-  --invoke-cmd "path/to/your/invoke_codex_desktop.sh"
+  --invoke-cmd "python scripts/invoke_codex.py" \
+  --invoke-on all
 ```
 
 Or manual/default (just logs, no automation configured):

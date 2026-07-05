@@ -269,7 +269,7 @@ def fetch_transcript(api, room):
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api):
+def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api, invoke_on="addressed"):
     """For each newly-seen message that addresses `owned_seat`, fire the
     invoker at most once (persisted in invoked_state[room] by seq, so a
     restart never re-fires a turn already handled). Never fires on the
@@ -277,7 +277,7 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
     for room, msg in found:
         if msg.get("agent") == agent:
             continue
-        if not mentions_seat(msg.get("content", ""), owned_seat, aliases):
+        if invoke_on != "all" and not mentions_seat(msg.get("content", ""), owned_seat, aliases):
             continue
         seq = int(msg.get("seq", 0))
         last_invoked = int(invoked_state.get(room, 0))
@@ -324,6 +324,12 @@ def main():
         help="Shell command to run for --invoke-driver command. Receives room/seat/seq "
         "as env vars (MAJLIS_INVOKE_ROOM/SEAT/SEQ) and appended args, transcript on stdin.",
     )
+    parser.add_argument(
+        "--invoke-on",
+        choices=["addressed", "all"],
+        default=os.environ.get("MAJLIS_INVOKE_ON", "addressed"),
+        help="'addressed' invokes only @seat/prefix turns; 'all' invokes on every new non-self turn.",
+    )
     args = parser.parse_args()
 
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -351,7 +357,7 @@ def main():
 
     print(
         f"watching {url} as {agent}; owned seat={owned_seat}; "
-        f"invoke-driver={args.invoke_driver}; state={args.state}",
+        f"invoke-driver={args.invoke_driver}; invoke-on={args.invoke_on}; state={args.state}",
         file=sys.stderr,
     )
     try:
@@ -367,7 +373,16 @@ def main():
                 replay=args.replay,
                 include_system=args.include_system,
             )
-            route_addressed(found, owned_seat, aliases, agent, state["invoked"], invoker, api)
+            route_addressed(
+                found,
+                owned_seat,
+                aliases,
+                agent,
+                state["invoked"],
+                invoker,
+                api,
+                invoke_on=args.invoke_on,
+            )
             save_state(args.state, state)
 
             for room, msg in found:
