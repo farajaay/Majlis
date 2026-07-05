@@ -8,7 +8,9 @@
 
 ## Stack
 FastAPI + uvicorn (server), vanilla HTML/JS with SSE + poll fallback (web),
-stdlib-only Python client (works on locked-down work PCs).
+stdlib-only Python client (works on locked-down work PCs). Hosted webapp
+additionally renders message content as Markdown (`react-markdown` +
+`remark-gfm`), since council turns are full of code fences and lists.
 
 ## UI tokens
 Two frontends, two palettes:
