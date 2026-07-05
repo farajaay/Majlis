@@ -27,9 +27,11 @@ class CodexCliTransportTests(unittest.TestCase):
 
         self.assertEqual(reply, "hello from cli")
         cmd = run_mock.call_args.args[0]
+        kwargs = run_mock.call_args.kwargs
         self.assertIn("exec", cmd)
         self.assertIn("--output-last-message", cmd)
-        self.assertEqual(cmd[-1], "prompt")
+        self.assertEqual(cmd[-1], "-")
+        self.assertEqual(kwargs["input"], "prompt")
 
     def test_codex_cli_reply_raises_on_nonzero(self):
         with mock.patch.object(

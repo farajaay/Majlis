@@ -175,11 +175,12 @@ def codex_cli_reply(prompt: str) -> str:
         "never",
         "--output-last-message",
         output_path,
-        prompt,
+        "-",
     ]
     try:
         proc = subprocess.run(
             cmd,
+            input=prompt,
             text=True,
             encoding="utf-8",
             errors="replace",
