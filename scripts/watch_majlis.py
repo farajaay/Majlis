@@ -286,8 +286,8 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
         if seq <= last_invoked:
             continue
         transcript = fetch_transcript(api, room)
-        invoker.invoke(room, owned_seat, msg, transcript)
-        invoked_state[room] = max(last_invoked, seq)
+        if invoker.invoke(room, owned_seat, msg, transcript):
+            invoked_state[room] = max(last_invoked, seq)
 
 
 def main():

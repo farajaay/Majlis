@@ -114,6 +114,15 @@ class RouteAddressedTests(unittest.TestCase):
         self.assertEqual(invoker.invoke.call_count, 2)
         self.assertEqual(invoked_state["Test"], 31)
 
+    def test_failed_invocation_does_not_advance_invoked_state(self):
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = False
+        found = [("Test", {"seq": 32, "agent": "farajaay", "kind": "chat", "content": "@codex one"})]
+        invoked_state = {}
+        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, self.api)
+        invoker.invoke.assert_called_once()
+        self.assertEqual(invoked_state, {})
+
 
 class CommandInvokerTests(unittest.TestCase):
     def test_runs_command_with_transcript_on_stdin_and_env(self):

@@ -3,10 +3,9 @@
 
 The watcher passes room/seat/seq as args and the fresh transcript on stdin.
 
-If OPENAI_API_KEY is set, this script asks the OpenAI Responses API for a
-short Majlis reply and posts it through the Majlis HTTP API. If no API key is
-set, it writes a local prompt packet, copies it to the Windows clipboard when
-available, and opens the Codex desktop app.
+By default this script sends a JSON invocation packet to a local transport
+pipe owned by the Codex side. Optional fallback modes can still use the
+OpenAI Responses API or write a local prompt packet for manual pickup.
 """
 import argparse
 import json
@@ -22,6 +21,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_MODEL = "gpt-4.1-mini"
 CODEX_APP_ID = "OpenAI.Codex_2p2nqsd0c76g0!App"
+DEFAULT_CODEX_PIPE = r"\\.\pipe\majlis-codex"
 
 
 def load_dotenv(path: Path) -> None:
@@ -96,6 +96,36 @@ Transcript:
 """
 
 
+def build_pipe_packet(room: str, seat: str, seq: str, transcript: str, prompt: str) -> dict:
+    return {
+        "type": "majlis.invoke",
+        "version": 1,
+        "room": room,
+        "seat": seat,
+        "seq": seq,
+        "transcript": transcript,
+        "prompt": prompt,
+        "created_at": int(time.time()),
+    }
+
+
+def write_pipe_packet(pipe_path: str, packet: dict, timeout: float = 10.0) -> None:
+    payload = json.dumps(packet, ensure_ascii=False, separators=(",", ":")) + "\n"
+    deadline = time.monotonic() + max(timeout, 0.0)
+    last_exc = None
+    while True:
+        try:
+            with open(pipe_path, "w", encoding="utf-8", newline="\n") as pipe:
+                pipe.write(payload)
+                pipe.flush()
+            return
+        except OSError as exc:
+            last_exc = exc
+            if time.monotonic() >= deadline:
+                raise last_exc
+            time.sleep(0.25)
+
+
 def openai_reply(prompt: str) -> str:
     api_key = os.environ.get("OPENAI_API_KEY", "")
     if not api_key:
@@ -159,6 +189,23 @@ def main() -> int:
     parser.add_argument("room", nargs="?")
     parser.add_argument("seat", nargs="?")
     parser.add_argument("seq", nargs="?")
+    parser.add_argument(
+        "--transport",
+        choices=["pipe", "openai", "packet", "auto"],
+        default=os.environ.get("MAJLIS_CODEX_TRANSPORT", "pipe"),
+        help="Invocation transport. Default: pipe.",
+    )
+    parser.add_argument(
+        "--pipe",
+        default=os.environ.get("MAJLIS_CODEX_PIPE", DEFAULT_CODEX_PIPE),
+        help="Named pipe path used by --transport pipe.",
+    )
+    parser.add_argument(
+        "--pipe-timeout",
+        type=float,
+        default=float(os.environ.get("MAJLIS_CODEX_PIPE_TIMEOUT", "10")),
+        help="Seconds to wait for the pipe server.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -177,11 +224,29 @@ def main() -> int:
         print(prompt)
         return 0
 
-    reply = openai_reply(prompt)
-    if reply:
-        record = post_majlis(room, seat, reply)
-        print(f"posted {seat} reply seq {record.get('seq')}")
-        return 0
+    if args.transport in ("pipe", "auto"):
+        try:
+            write_pipe_packet(
+                args.pipe,
+                build_pipe_packet(room, seat, seq, transcript, prompt),
+                timeout=args.pipe_timeout,
+            )
+            print(f"sent Codex invocation packet to pipe: {args.pipe}")
+            return 0
+        except OSError as exc:
+            print(f"pipe transport unavailable at {args.pipe}: {exc}", file=sys.stderr)
+            if args.transport == "pipe":
+                return 1
+
+    if args.transport in ("openai", "auto"):
+        reply = openai_reply(prompt)
+        if reply:
+            record = post_majlis(room, seat, reply)
+            print(f"posted {seat} reply seq {record.get('seq')}")
+            return 0
+        if args.transport == "openai":
+            print("OPENAI_API_KEY is not set or no reply was generated", file=sys.stderr)
+            return 1
 
     packet = write_prompt_packet(room, seat, seq, prompt)
     copied = copy_to_clipboard(prompt)

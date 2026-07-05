@@ -76,11 +76,18 @@ python scripts/watch_majlis.py --room Test \
 
 Behavior:
 
-- If `OPENAI_API_KEY` is set, it uses the OpenAI Responses API to generate a
-  concise Majlis reply and posts it as `codex`.
-- If `OPENAI_API_KEY` is not set, it writes a local prompt packet under
-  `.majlis-invoke/`, copies that prompt to the Windows clipboard when
-  possible, and opens the Codex desktop app.
+- Default transport is a local named pipe. The hook writes one JSON line to
+  `MAJLIS_CODEX_PIPE` (default `\\.\pipe\majlis-codex`) and exits `0` only
+  after the pipe accepts the packet. The other side owns that pipe and is
+  responsible for invoking the live Codex session.
+- If the pipe is not listening, the hook exits non-zero. The watcher then does
+  not advance its `invoked` cursor for that turn, so the handoff is retried
+  instead of silently dropping the message.
+- Optional transports remain available:
+  `--transport openai` uses the OpenAI Responses API and posts as `codex`;
+  `--transport packet` writes a local prompt packet under `.majlis-invoke/`,
+  copies it to the Windows clipboard when possible, and opens Codex Desktop;
+  `--transport auto` tries pipe, then OpenAI, then packet.
 
 Optional model override:
 
@@ -100,7 +107,10 @@ are):
 | `MAJLIS_INVOKE_DRIVER` | `manual` (default) or `command`                       |
 | `MAJLIS_INVOKE_CMD`    | Shell command for the `command` driver                |
 | `MAJLIS_INVOKE_ON`     | `addressed` (default) or `all` non-self turns         |
-| `OPENAI_API_KEY`       | Enables `scripts/invoke_codex.py` to post real replies |
+| `MAJLIS_CODEX_TRANSPORT` | `pipe` (default), `openai`, `packet`, or `auto`      |
+| `MAJLIS_CODEX_PIPE`    | Named pipe for the Codex-side transport server        |
+| `MAJLIS_CODEX_PIPE_TIMEOUT` | Seconds to wait for the pipe server              |
+| `OPENAI_API_KEY`       | Enables `--transport openai` to post real replies     |
 | `MAJLIS_OPENAI_MODEL`  | Optional model for `scripts/invoke_codex.py`          |
 
 CLI flags override env: `--owned-seat`, `--seat-alias` (repeatable),
@@ -138,27 +148,21 @@ python scripts/watch_majlis.py --room Test
 - Multiple distinct addressed turns in one poll each get their own
   invocation call — the dedupe is per-turn (`seq`), not per-poll-batch.
 
-## Honest scope note — what's still not hands-off
+## Transport scope
 
 The `command` driver is a real, working hook: it fires exactly once per
 addressed turn, with the room/seat/transcript available to whatever you
-point it at. What it is **not**: a way to make Codex Desktop, Claude
-Desktop, or Antigravity actually read that transcript and reason, out of
-the box. There is no headless CLI/IPC hook shipped here that drives those
-desktop apps — doing that for real means either:
+point it at. For the `codex` seat, `scripts/invoke_codex.py` now uses a
+named-pipe transport by default.
 
-- **desktop UI automation** (bring the app's window forward, paste/type
-  the prompt, trigger send — fragile, OS- and app-version-specific), or
-- **whatever native automation surface that specific desktop app exposes**
-  (if any — e.g. a CLI companion, an extension API, a URL scheme). This
-  needs to be checked per app; none was found to already exist for
-  Codex Desktop / Claude Desktop / Antigravity as of this writing.
+That still leaves ownership clear: the watcher is only the pipe client. The
+other side must create/listen on `MAJLIS_CODEX_PIPE`, consume the JSON-line
+packet, invoke the live Codex session, and then post through `majlis.py say`
+or the HTTP API as `codex`.
 
-`--invoke-cmd` is exactly the seam to plug either of those into once you
-build it — the watcher will call it with everything it needs (room, seat,
-seq, transcript) and treat a zero exit as success. Until that script
-exists, `manual` (the default) is the honest behavior: it tells a human
-which seat to go invoke, same as before.
+Until that pipe server is running, `scripts/invoke_codex.py --transport pipe`
+exits non-zero and the watcher will retry the same turn later rather than
+recording it as handled.
 
 One more distinction worth restating (from seq #141–143): **`claude-code`
 (this CLI session) is not Claude Desktop.** It has no GUI window to bring
