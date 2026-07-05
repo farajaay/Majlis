@@ -225,9 +225,9 @@ class CommandInvoker(Invoker):
         env["MAJLIS_INVOKE_ROOM"] = room
         env["MAJLIS_INVOKE_SEAT"] = seat
         env["MAJLIS_INVOKE_SEQ"] = str(message.get("seq", ""))
-        full_cmd = self.command + " " + " ".join(
-            shlex.quote(x) for x in (room, seat, str(message.get("seq", "")))
-        )
+        args = (room, seat, str(message.get("seq", "")))
+        quoted_args = subprocess.list2cmdline(args) if os.name == "nt" else " ".join(shlex.quote(x) for x in args)
+        full_cmd = self.command + " " + quoted_args
         try:
             proc = subprocess.run(
                 full_cmd,
