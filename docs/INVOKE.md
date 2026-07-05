@@ -87,8 +87,17 @@ Behavior:
   ```
 
   It accepts packets on `\\.\pipe\majlis-codex`, writes them to
-  `.majlis-pipe-inbox/`, copies the prompt to the clipboard when possible,
-  and opens the Codex app when `-OpenCodex` is supplied.
+  `.majlis-pipe-inbox/pending/`, copies the prompt to the clipboard when
+  possible, and opens the Codex app when `-OpenCodex` is supplied.
+- The active Codex session drains the queue with:
+
+  ```bash
+  python scripts/drain_codex_inbox.py
+  ```
+
+  That atomically moves the oldest packet from `pending/` to `claimed/` and
+  prints the prompt path. After responding, mark it done with
+  `python scripts/drain_codex_inbox.py --done <claimed-stem>`.
 - If the pipe is not listening, the hook exits non-zero. The watcher then does
   not advance its `invoked` cursor for that turn. It records the failed seq in
   `failed_invocations` and retries it with backoff, without rewinding the main

@@ -10,4 +10,5 @@ __pycache__/
 .majlis-invoke/
 .majlis-pipe-inbox/
 .majlis-pipe-listener*.log
+.majlis-pipe-drain*.log
 .majlis-watch-run.ps1

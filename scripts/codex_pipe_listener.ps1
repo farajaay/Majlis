@@ -8,6 +8,9 @@ param(
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path -Parent $PSScriptRoot)
 New-Item -ItemType Directory -Force -Path $InboxDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InboxDir "pending") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InboxDir "claimed") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $InboxDir "done") | Out-Null
 
 function Write-Log {
   param([string]$Message)
@@ -25,7 +28,7 @@ function Save-Packet {
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
   $safeRoom = $room -replace "[^A-Za-z0-9_.-]", "_"
   $safeSeat = $seat -replace "[^A-Za-z0-9_.-]", "_"
-  $base = Join-Path $InboxDir "$stamp-$safeRoom-$safeSeat-$seq"
+  $base = Join-Path (Join-Path $InboxDir "pending") "$stamp-$safeRoom-$safeSeat-$seq"
 
   Set-Content -Path "$base.json" -Value $Line -Encoding utf8
   if ($packet.prompt) {
