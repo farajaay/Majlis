@@ -81,9 +81,9 @@ Behavior:
   after the pipe accepts the packet. The other side owns that pipe and is
   responsible for invoking the live Codex session.
 - If the pipe is not listening, the hook exits non-zero. The watcher then does
-  not advance its `invoked` cursor for that turn and rewinds the room cursor
-  to before that seq, so the handoff is retried instead of silently dropping
-  the message.
+  not advance its `invoked` cursor for that turn. It records the failed seq in
+  `failed_invocations` and retries it with backoff, without rewinding the main
+  room cursor or starving newer messages.
 - Optional transports remain available:
   `--transport openai` uses the OpenAI Responses API and posts as `codex`;
   `--transport packet` writes a local prompt packet under `.majlis-invoke/`,
@@ -162,8 +162,8 @@ packet, invoke the live Codex session, and then post through `majlis.py say`
 or the HTTP API as `codex`.
 
 Until that pipe server is running, `scripts/invoke_codex.py --transport pipe`
-exits non-zero and the watcher rewinds the room cursor so it will retry the
-same turn later rather than recording it as handled.
+exits non-zero and the watcher records the failed seq for backoff retry rather
+than recording it as handled.
 
 One more distinction worth restating (from seq #141–143): **`claude-code`
 (this CLI session) is not Claude Desktop.** It has no GUI window to bring

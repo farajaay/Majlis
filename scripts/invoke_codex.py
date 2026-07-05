@@ -119,6 +119,8 @@ def write_pipe_packet(pipe_path: str, packet: dict, timeout: float = 10.0) -> No
                 pipe.write(payload)
                 pipe.flush()
             return
+        except FileNotFoundError:
+            raise
         except OSError as exc:
             last_exc = exc
             if time.monotonic() >= deadline:

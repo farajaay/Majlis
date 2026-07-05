@@ -191,7 +191,31 @@ class BuildInvokerTests(unittest.TestCase):
 class LoadStateTests(unittest.TestCase):
     def test_missing_file_has_invoked_key(self):
         state = watch_majlis.load_state(os.path.join(ROOT, "no-such-state-file.json"))
-        self.assertEqual(state, {"rooms": {}, "invoked": {}})
+        self.assertEqual(state, {"rooms": {}, "invoked": {}, "failed_invocations": {}})
+
+    def test_existing_state_gets_failed_invocations_key(self):
+        with mock.patch.object(watch_majlis.os.path, "exists", return_value=True), \
+             mock.patch("builtins.open", mock.mock_open(read_data='{"rooms":{},"invoked":{}}')):
+            state = watch_majlis.load_state("state.json")
+        self.assertEqual(state["failed_invocations"], {})
+
+
+class FailedInvocationBackoffTests(unittest.TestCase):
+    def test_remember_failed_invocation_with_backoff(self):
+        state = {"failed_invocations": {}}
+        watch_majlis.remember_failed_invocations(state, [("Test", 12)], now=100)
+        item = state["failed_invocations"]["Test"]["12"]
+        self.assertEqual(item["attempts"], 1)
+        self.assertEqual(item["next_retry"], 115)
+
+    def test_due_failed_invocations_respects_limit_and_time(self):
+        state = {"failed_invocations": {"Test": {"12": {"seq": 12, "next_retry": 90}, "13": {"seq": 13, "next_retry": 200}}}}
+        self.assertEqual(watch_majlis.due_failed_invocations(state, ["Test"], now=100), [("Test", 12)])
+
+    def test_clear_failed_invocation_removes_empty_room(self):
+        state = {"failed_invocations": {"Test": {"12": {"seq": 12}}}}
+        watch_majlis.clear_failed_invocation(state, "Test", 12)
+        self.assertEqual(state["failed_invocations"], {})
 
 
 class PollOnceRoutingIntegrationTests(unittest.TestCase):

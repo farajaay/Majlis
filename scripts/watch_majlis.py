@@ -63,13 +63,15 @@ def request_json(base_url, path, key="", token="", data=None, method=None):
 
 def load_state(path):
     if not os.path.exists(path):
-        return {"rooms": {}, "invoked": {}}
+        return {"rooms": {}, "invoked": {}, "failed_invocations": {}}
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data.get("rooms"), dict):
         data["rooms"] = {}
     if not isinstance(data.get("invoked"), dict):
         data["invoked"] = {}
+    if not isinstance(data.get("failed_invocations"), dict):
+        data["failed_invocations"] = {}
     return data
 
 
@@ -294,6 +296,64 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
     return failed
 
 
+def remember_failed_invocations(state, failed, now=None):
+    now = time.time() if now is None else now
+    pending = state.setdefault("failed_invocations", {})
+    for room, seq in failed:
+        room_pending = pending.setdefault(room, {})
+        key = str(seq)
+        existing = room_pending.get(key, {})
+        attempts = int(existing.get("attempts", 0)) + 1
+        delay = min(300, 15 * (2 ** min(attempts - 1, 5)))
+        room_pending[key] = {
+            "seq": seq,
+            "attempts": attempts,
+            "next_retry": now + delay,
+        }
+
+
+def due_failed_invocations(state, rooms, now=None, limit=1):
+    now = time.time() if now is None else now
+    pending = state.setdefault("failed_invocations", {})
+    due = []
+    for room in rooms:
+        for key, item in sorted(pending.get(room, {}).items(), key=lambda pair: int(pair[0])):
+            if len(due) >= limit:
+                return due
+            if float(item.get("next_retry", 0)) <= now:
+                due.append((room, int(item.get("seq", key))))
+    return due
+
+
+def clear_failed_invocation(state, room, seq):
+    room_pending = state.setdefault("failed_invocations", {}).get(room)
+    if not room_pending:
+        return
+    room_pending.pop(str(seq), None)
+    if not room_pending:
+        state["failed_invocations"].pop(room, None)
+
+
+def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api):
+    failed_again = []
+    for room, seq in due_failed_invocations(state, rooms):
+        if int(state.get("invoked", {}).get(room, 0)) >= seq:
+            clear_failed_invocation(state, room, seq)
+            continue
+        messages = api(f"/api/rooms/{urllib.parse.quote(room, safe='')}/messages?since={seq - 1}")
+        msg = next((m for m in messages if int(m.get("seq", 0)) == seq), None)
+        if not msg or msg.get("agent") == agent:
+            clear_failed_invocation(state, room, seq)
+            continue
+        transcript = fetch_transcript(api, room)
+        if invoker.invoke(room, owned_seat, msg, transcript):
+            state["invoked"][room] = max(int(state["invoked"].get(room, 0)), seq)
+            clear_failed_invocation(state, room, seq)
+        else:
+            failed_again.append((room, seq))
+    remember_failed_invocations(state, failed_again)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--room", action="append", help="Room to watch. Repeat for multiple rooms.")
@@ -389,8 +449,8 @@ def main():
                 api,
                 invoke_on=args.invoke_on,
             )
-            for room, seq in failed_invocations:
-                state["rooms"][room] = min(int(state["rooms"].get(room, seq)), seq - 1)
+            remember_failed_invocations(state, failed_invocations)
+            retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api)
             save_state(args.state, state)
 
             for room, msg in found:
