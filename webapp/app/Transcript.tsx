@@ -131,11 +131,13 @@ export function Transcript({ me }: { me: string }) {
   const presenceByAgent = new Map(presence.map((p) => [p.agent, p]));
   const activePresence = presence.filter((p) => !messages.some((m) => m.agent === p.agent));
   const seatsSeen = new Set<string>();
+  const STALE_SECONDS = 3600; // past this, hide the dot rather than show a permanently-grey "away"
   const presenceTooltip = (p?: Presence) => {
     if (!p) return "away (no presence data)";
     const seconds = Math.max(0, Math.round(Date.now() / 1000 - p.last_seen));
     return `${p.state} \u2014 last seen ${seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m`} ago`;
   };
+  const isStale = (p?: Presence) => !p || Date.now() / 1000 - p.last_seen > STALE_SECONDS;
 
   return (
     <>
@@ -165,24 +167,29 @@ export function Transcript({ me }: { me: string }) {
               seatsSeen.add(m.agent);
               return true;
             })
-            .map((m) => (
-              <span className="seat" key={m.agent} title={presenceTooltip(presenceByAgent.get(m.agent))}>
-                <span className="seal" style={{ background: seatColor(m.agent) }}>
-                  {m.agent.slice(0, 2).toUpperCase()}
+            .map((m) => {
+              const p = presenceByAgent.get(m.agent);
+              return (
+                <span className="seat" key={m.agent} title={presenceTooltip(p)}>
+                  <span className="seal" style={{ background: seatColor(m.agent) }}>
+                    {m.agent.slice(0, 2).toUpperCase()}
+                  </span>
+                  {m.agent}
+                  {!isStale(p) && <span className={`status-dot ${p?.state || "away"}`} />}
                 </span>
-                {m.agent}
-                <span className={`status-dot ${presenceByAgent.get(m.agent)?.state || 'away'}`} />
+              );
+            })}
+          {activePresence
+            .filter((p) => !isStale(p))
+            .map((p) => (
+              <span className="seat" key={p.agent} title={presenceTooltip(p)}>
+                <span className="seal" style={{ background: seatColor(p.agent) }}>
+                  {p.agent.slice(0, 2).toUpperCase()}
+                </span>
+                {p.agent}
+                <span className={`status-dot ${p.state}`} />
               </span>
             ))}
-          {activePresence.map((p) => (
-            <span className="seat" key={p.agent} title={presenceTooltip(p)}>
-              <span className="seal" style={{ background: seatColor(p.agent) }}>
-                {p.agent.slice(0, 2).toUpperCase()}
-              </span>
-              {p.agent}
-              <span className={`status-dot ${p.state}`} />
-            </span>
-          ))}
           <span style={{ fontSize: 12, color: "var(--dim)" }}>{me}</span>
           <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
             guide
