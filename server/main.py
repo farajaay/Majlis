@@ -85,6 +85,38 @@ def _write_presence(room: str, presence: dict[str, dict]):
     f.write_text(json.dumps(presence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+CLAIM_STATUSES = {
+    "idle", "claimed", "working", "verifying", "reporting",
+    "blocked", "stale", "failed", "superseded",
+}
+
+
+class ClaimIn(BaseModel):
+    seat: str
+    trigger_seq: int
+    status: str = "claimed"
+    scope: str = "reply"
+    expires_at: float | None = None
+    last_error: str | None = None
+    posted_seq: int | None = None
+
+
+def _claim_key(seat: str, trigger_seq: int) -> str:
+    return f"{seat}::{trigger_seq}"
+
+
+def _read_claims(room: str) -> dict[str, dict]:
+    f = _room_dir(room) / "claims.json"
+    if not f.exists():
+        return {}
+    return json.loads(f.read_text(encoding="utf-8"))
+
+
+def _write_claims(room: str, claims: dict[str, dict]):
+    f = _room_dir(room) / "claims.json"
+    f.write_text(json.dumps(claims, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 @app.get("/api/rooms")
 def list_rooms(request: Request):
     _check_key(request)
@@ -120,6 +152,42 @@ def post_presence(room: str, msg: PresenceIn, request: Request):
     presence[agent] = {"agent": agent, "state": state, "last_seen": time.time()}
     _write_presence(room, presence)
     return presence[agent]
+
+
+@app.get("/api/rooms/{room}/claims")
+def get_claims(room: str, request: Request, seat: str | None = None):
+    _check_key(request)
+    claims = list(_read_claims(room).values())
+    if seat:
+        claims = [c for c in claims if c["seat"] == seat]
+    return sorted(claims, key=lambda c: (c["seat"], c["trigger_seq"]))
+
+
+@app.post("/api/rooms/{room}/claims")
+def post_claim(room: str, msg: ClaimIn, request: Request):
+    _check_key(request)
+    if msg.status not in CLAIM_STATUSES:
+        raise HTTPException(400, "invalid status")
+    seat = _safe(msg.seat)
+    claims = _read_claims(room)
+    key = _claim_key(seat, msg.trigger_seq)
+    existing = claims.get(key)
+    now = time.time()
+    record = {
+        "room": room,
+        "seat": seat,
+        "scope": msg.scope,
+        "trigger_seq": msg.trigger_seq,
+        "status": msg.status,
+        "started_at": existing["started_at"] if existing else now,
+        "updated_at": now,
+        "expires_at": msg.expires_at if msg.expires_at is not None else (existing or {}).get("expires_at"),
+        "last_error": msg.last_error if msg.last_error is not None else (existing or {}).get("last_error"),
+        "posted_seq": msg.posted_seq if msg.posted_seq is not None else (existing or {}).get("posted_seq"),
+    }
+    claims[key] = record
+    _write_claims(room, claims)
+    return record
 
 
 @app.post("/api/rooms/{room}/messages")

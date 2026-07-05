@@ -26,6 +26,42 @@ export type Presence = {
 };
 type Counter = { _id: string; seq: number };
 
+export type ClaimStatus =
+  | "idle"
+  | "claimed"
+  | "working"
+  | "verifying"
+  | "reporting"
+  | "blocked"
+  | "stale"
+  | "failed"
+  | "superseded";
+
+const CLAIM_STATUSES: ClaimStatus[] = [
+  "idle",
+  "claimed",
+  "working",
+  "verifying",
+  "reporting",
+  "blocked",
+  "stale",
+  "failed",
+  "superseded",
+];
+
+export type Claim = {
+  room: string;
+  seat: string;
+  scope: string;
+  trigger_seq: number;
+  status: ClaimStatus;
+  started_at: number;
+  updated_at: number;
+  expires_at: number | null;
+  last_error: string | null;
+  posted_seq: number | null;
+};
+
 // This project shares a MongoDB Atlas cluster with another Vercel project
 // (the only already-authorized, API-provisionable database on the account) —
 // everything Majlis writes lives in its own `majlis` database within that
@@ -54,6 +90,9 @@ async function presence(): Promise<Collection<Presence>> {
 }
 async function counters(): Promise<Collection<Counter>> {
   return (await db()).collection<Counter>("counters");
+}
+async function claims(): Promise<Collection<Claim>> {
+  return (await db()).collection<Claim>("claims");
 }
 
 export async function listRooms(): Promise<
@@ -155,5 +194,56 @@ export async function updatePresence(
   await (
     await presence()
   ).updateOne({ room, agent: msg.agent }, { $set: record }, { upsert: true });
+  return record;
+}
+
+export async function listClaims(room: string, seat?: string): Promise<Claim[]> {
+  assertSafeName(room);
+  const query: { room: string; seat?: string } = { room };
+  if (seat) query.seat = seat;
+  return (await claims())
+    .find(query, { projection: { _id: 0 } })
+    .sort({ seat: 1, trigger_seq: 1 })
+    .toArray();
+}
+
+export async function upsertClaim(
+  room: string,
+  msg: {
+    seat: string;
+    trigger_seq: number;
+    status?: string;
+    scope?: string;
+    expires_at?: number | null;
+    last_error?: string | null;
+    posted_seq?: number | null;
+  }
+): Promise<Claim> {
+  assertSafeName(room);
+  assertSafeName(msg.seat);
+  if (msg.status && !CLAIM_STATUSES.includes(msg.status as ClaimStatus)) {
+    throw new Error("invalid status");
+  }
+  const status = (msg.status as ClaimStatus) || "claimed";
+  const col = await claims();
+  const existing = await col.findOne({ room, seat: msg.seat, trigger_seq: msg.trigger_seq });
+  const now = Date.now() / 1000;
+  const record: Claim = {
+    room,
+    seat: msg.seat,
+    scope: msg.scope ?? existing?.scope ?? "reply",
+    trigger_seq: msg.trigger_seq,
+    status,
+    started_at: existing?.started_at ?? now,
+    updated_at: now,
+    expires_at: msg.expires_at !== undefined ? msg.expires_at : existing?.expires_at ?? null,
+    last_error: msg.last_error !== undefined ? msg.last_error : existing?.last_error ?? null,
+    posted_seq: msg.posted_seq !== undefined ? msg.posted_seq : existing?.posted_seq ?? null,
+  };
+  await col.updateOne(
+    { room, seat: msg.seat, trigger_seq: msg.trigger_seq },
+    { $set: record },
+    { upsert: true }
+  );
   return record;
 }

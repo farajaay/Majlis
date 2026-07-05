@@ -8,6 +8,7 @@ Run:
 """
 import importlib.util
 import os
+import time
 import unittest
 from unittest import mock
 
@@ -131,6 +132,158 @@ class RouteAddressedTests(unittest.TestCase):
         for room, seq in failed:
             state["rooms"][room] = min(int(state["rooms"].get(room, seq)), seq - 1)
         self.assertEqual(state["rooms"]["Test"], 31)
+
+    def test_use_claims_false_never_touches_claims_api(self):
+        found = [("Test", {"seq": 50, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = True
+        calls = []
+
+        def api(path, data=None, method=None):
+            calls.append(path)
+            return []
+
+        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
+        self.assertFalse(any("/claims" in p for p in calls))
+
+    def test_use_claims_skips_invocation_when_claim_active(self):
+        found = [("Test", {"seq": 51, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                self.assertIsNone(method)  # only a GET should happen before the skip
+                return [{"seat": "codex", "trigger_seq": 51, "status": "working",
+                         "expires_at": time.time() + 300}]
+            return []
+
+        invoked_state = {}
+        failed = watch_majlis.route_addressed(
+            found, "codex", [], "codex", invoked_state, invoker, api, use_claims=True
+        )
+        invoker.invoke.assert_not_called()
+        self.assertEqual(invoked_state, {})
+        self.assertEqual(failed, [])
+
+    def test_use_claims_ignores_expired_claim_and_invokes(self):
+        found = [("Test", {"seq": 52, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = True
+
+        def api(path, data=None, method=None):
+            if "/claims" in path and method != "POST":
+                return [{"seat": "codex", "trigger_seq": 52, "status": "working",
+                         "expires_at": time.time() - 1}]
+            if "/claims" in path:
+                return dict(data)
+            return []
+
+        invoked_state = {}
+        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api, use_claims=True)
+        invoker.invoke.assert_called_once()
+        self.assertEqual(invoked_state["Test"], 52)
+
+    def test_use_claims_records_claimed_then_idle_on_success(self):
+        found = [("Test", {"seq": 53, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = True
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                if method == "POST":
+                    posts.append(dict(data))
+                    return dict(data)
+                return []
+            return []
+
+        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api, use_claims=True)
+        self.assertEqual([p["status"] for p in posts], ["claimed", "idle"])
+        self.assertIn("expires_at", posts[0])
+
+    def test_use_claims_records_failed_status_on_invoke_failure(self):
+        found = [("Test", {"seq": 54, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = False
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                if method == "POST":
+                    posts.append(dict(data))
+                    return dict(data)
+                return []
+            return []
+
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api, use_claims=True)
+        self.assertEqual([p["status"] for p in posts], ["claimed", "failed"])
+        self.assertEqual(failed, [("Test", 54)])
+
+
+class ClaimHelperTests(unittest.TestCase):
+    def test_find_claim_matches_seat_and_trigger_seq(self):
+        claims = [{"seat": "codex", "trigger_seq": 3}, {"seat": "codex", "trigger_seq": 5}]
+        self.assertEqual(watch_majlis.find_claim(claims, "codex", 5)["trigger_seq"], 5)
+
+    def test_find_claim_returns_none_when_missing(self):
+        claims = [{"seat": "codex", "trigger_seq": 3}]
+        self.assertIsNone(watch_majlis.find_claim(claims, "codex", 99))
+
+    def test_claim_is_active_true_for_non_expired_active_status(self):
+        claim = {"status": "working", "expires_at": time.time() + 100}
+        self.assertTrue(watch_majlis.claim_is_active(claim))
+
+    def test_claim_is_active_false_when_expired(self):
+        claim = {"status": "working", "expires_at": time.time() - 1}
+        self.assertFalse(watch_majlis.claim_is_active(claim))
+
+    def test_claim_is_active_false_for_terminal_status(self):
+        claim = {"status": "idle", "expires_at": time.time() + 100}
+        self.assertFalse(watch_majlis.claim_is_active(claim))
+
+    def test_claim_is_active_true_without_expiry(self):
+        claim = {"status": "claimed", "expires_at": None}
+        self.assertTrue(watch_majlis.claim_is_active(claim))
+
+    def test_claim_is_active_false_for_missing_claim(self):
+        self.assertFalse(watch_majlis.claim_is_active(None))
+
+
+class RetryFailedInvocationsClaimTests(unittest.TestCase):
+    def test_retry_skips_invocation_when_claim_active(self):
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                return [{"seat": "codex", "trigger_seq": 9, "status": "working",
+                         "expires_at": time.time() + 300}]
+            if "messages" in path:
+                return [{"seq": 9, "ts": 0, "agent": "farajaay", "kind": "chat", "content": "@codex retry me"}]
+            return []
+
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        state = {"invoked": {}, "failed_invocations": {"Test": {"9": {"seq": 9, "next_retry": 0}}}}
+        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api, use_claims=True)
+        invoker.invoke.assert_not_called()
+
+    def test_retry_invokes_and_claims_when_no_active_claim(self):
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                if method == "POST":
+                    posts.append(dict(data))
+                    return dict(data)
+                return []
+            if "messages" in path:
+                return [{"seq": 9, "ts": 0, "agent": "farajaay", "kind": "chat", "content": "@codex retry me"}]
+            return []
+
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = True
+        state = {"invoked": {}, "failed_invocations": {"Test": {"9": {"seq": 9, "next_retry": 0}}}}
+        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api, use_claims=True)
+        invoker.invoke.assert_called_once()
+        self.assertEqual([p["status"] for p in posts], ["claimed", "idle"])
+        self.assertEqual(state["invoked"]["Test"], 9)
 
 
 class CommandInvokerTests(unittest.TestCase):

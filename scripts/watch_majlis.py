@@ -273,11 +273,73 @@ def fetch_transcript(api, room):
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api, invoke_on="addressed"):
+# Per-(room, seat, trigger_seq) work claims: operational metadata, stored
+# beside presence (not transcript history), so two independent processes
+# invoking the same seat (e.g. a live scheduled session and a separate
+# watch_majlis.py-driven headless transport) don't both fire on the same
+# turn. See docs/INVOKE.md.
+CLAIM_ACTIVE_STATUSES = {"claimed", "working", "verifying", "reporting"}
+DEFAULT_CLAIM_TTL = 300  # seconds before an unfinished claim is no longer treated as active
+
+
+def get_claims(api, room, seat=None):
+    path = "/api/rooms/{}/claims".format(urllib.parse.quote(room, safe=""))
+    if seat:
+        path += "?seat=" + urllib.parse.quote(seat, safe="")
+    return api(path)
+
+
+def upsert_claim(api, room, seat, trigger_seq, status, **fields):
+    path = "/api/rooms/{}/claims".format(urllib.parse.quote(room, safe=""))
+    payload = {"seat": seat, "trigger_seq": trigger_seq, "status": status}
+    payload.update(fields)
+    return api(path, data=payload, method="POST")
+
+
+def find_claim(claims, seat, trigger_seq):
+    for claim in claims:
+        if claim.get("seat") == seat and int(claim.get("trigger_seq", -1)) == int(trigger_seq):
+            return claim
+    return None
+
+
+def claim_is_active(claim, now=None):
+    """True if `claim` represents in-progress work that should block a
+    second invocation for the same (room, seat, trigger_seq): a non-terminal
+    status whose lease (expires_at) hasn't passed. No expires_at means the
+    claim doesn't expire on its own."""
+    if not claim or claim.get("status") not in CLAIM_ACTIVE_STATUSES:
+        return False
+    expires_at = claim.get("expires_at")
+    if expires_at is None:
+        return True
+    return float(expires_at) > (time.time() if now is None else now)
+
+
+def claim_and_invoke(room, owned_seat, msg, seq, invoker, api, use_claims, claim_ttl):
+    """Runs the claim-guard + invoke + claim-resolution sequence shared by
+    route_addressed and retry_failed_invocations. Returns None if a live
+    claim already owns this turn (skip, neither success nor failure), else
+    the invoker's bool result."""
+    if use_claims:
+        existing = find_claim(get_claims(api, room, owned_seat), owned_seat, seq)
+        if claim_is_active(existing):
+            return None
+        upsert_claim(api, room, owned_seat, seq, "claimed", expires_at=time.time() + claim_ttl)
+    transcript = fetch_transcript(api, room)
+    success = invoker.invoke(room, owned_seat, msg, transcript)
+    if use_claims:
+        upsert_claim(api, room, owned_seat, seq, "idle" if success else "failed")
+    return success
+
+
+def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api,
+                     invoke_on="addressed", use_claims=False, claim_ttl=DEFAULT_CLAIM_TTL):
     """For each newly-seen message that addresses `owned_seat`, fire the
     invoker at most once (persisted in invoked_state[room] by seq, so a
     restart never re-fires a turn already handled). Never fires on the
-    owned seat's own messages."""
+    owned seat's own messages. When use_claims is set, also skips a turn
+    another process already has an active claim on."""
     failed = []
     for room, msg in found:
         if msg.get("agent") == agent:
@@ -288,8 +350,10 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
         last_invoked = int(invoked_state.get(room, 0))
         if seq <= last_invoked:
             continue
-        transcript = fetch_transcript(api, room)
-        if invoker.invoke(room, owned_seat, msg, transcript):
+        result = claim_and_invoke(room, owned_seat, msg, seq, invoker, api, use_claims, claim_ttl)
+        if result is None:
+            continue
+        if result:
             invoked_state[room] = max(last_invoked, seq)
         else:
             failed.append((room, seq))
@@ -347,7 +411,8 @@ def prune_handled_failed_invocations(state):
             pending.pop(room, None)
 
 
-def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api):
+def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api,
+                              use_claims=False, claim_ttl=DEFAULT_CLAIM_TTL):
     prune_handled_failed_invocations(state)
     failed_again = []
     for room, seq in due_failed_invocations(state, rooms):
@@ -359,8 +424,10 @@ def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api):
         if not msg or msg.get("agent") == agent:
             clear_failed_invocation(state, room, seq)
             continue
-        transcript = fetch_transcript(api, room)
-        if invoker.invoke(room, owned_seat, msg, transcript):
+        result = claim_and_invoke(room, owned_seat, msg, seq, invoker, api, use_claims, claim_ttl)
+        if result is None:
+            continue
+        if result:
             state["invoked"][room] = max(int(state["invoked"].get(room, 0)), seq)
             clear_failed_invocation(state, room, seq)
         else:
@@ -411,6 +478,20 @@ def main():
         default=os.environ.get("MAJLIS_INVOKE_ON", "addressed"),
         help="'addressed' invokes only @seat/prefix turns; 'all' invokes on every new non-self turn.",
     )
+    parser.add_argument(
+        "--use-claims",
+        action="store_true",
+        default=os.environ.get("MAJLIS_USE_CLAIMS", "").lower() in ("1", "true", "yes"),
+        help="Check/record a (room, seat, trigger_seq) claim via /api/rooms/<room>/claims "
+        "before invoking, so a second process invoking the same seat skips a turn "
+        "already claimed. Off by default.",
+    )
+    parser.add_argument(
+        "--claim-ttl",
+        type=float,
+        default=float(os.environ.get("MAJLIS_CLAIM_TTL", DEFAULT_CLAIM_TTL)),
+        help=f"Seconds before an unfinished claim is no longer treated as active (default {DEFAULT_CLAIM_TTL}).",
+    )
     args = parser.parse_args()
 
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -438,7 +519,8 @@ def main():
 
     print(
         f"watching {url} as {agent}; owned seat={owned_seat}; "
-        f"invoke-driver={args.invoke_driver}; invoke-on={args.invoke_on}; state={args.state}",
+        f"invoke-driver={args.invoke_driver}; invoke-on={args.invoke_on}; "
+        f"use-claims={args.use_claims}; state={args.state}",
         file=sys.stderr,
     )
     try:
@@ -463,9 +545,14 @@ def main():
                 invoker,
                 api,
                 invoke_on=args.invoke_on,
+                use_claims=args.use_claims,
+                claim_ttl=args.claim_ttl,
             )
             remember_failed_invocations(state, failed_invocations)
-            retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api)
+            retry_failed_invocations(
+                state, rooms, owned_seat, agent, invoker, api,
+                use_claims=args.use_claims, claim_ttl=args.claim_ttl,
+            )
             prune_handled_failed_invocations(state)
             save_state(args.state, state)
 
