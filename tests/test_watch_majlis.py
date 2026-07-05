@@ -59,9 +59,10 @@ class RouteAddressedTests(unittest.TestCase):
         invoker = mock.Mock(spec=watch_majlis.Invoker)
         found = [("Test", {"seq": 10, "agent": "farajaay", "kind": "chat", "content": "@codex please look"})]
         invoked_state = {}
-        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, self.api)
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, self.api)
         invoker.invoke.assert_called_once()
         self.assertEqual(invoked_state["Test"], 10)
+        self.assertEqual(failed, [])
 
     def test_skips_seats_own_messages(self):
         invoker = mock.Mock(spec=watch_majlis.Invoker)
@@ -119,9 +120,17 @@ class RouteAddressedTests(unittest.TestCase):
         invoker.invoke.return_value = False
         found = [("Test", {"seq": 32, "agent": "farajaay", "kind": "chat", "content": "@codex one"})]
         invoked_state = {}
-        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, self.api)
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, self.api)
         invoker.invoke.assert_called_once()
         self.assertEqual(invoked_state, {})
+        self.assertEqual(failed, [("Test", 32)])
+
+    def test_failed_invocation_can_rewind_room_cursor(self):
+        state = {"rooms": {"Test": 40}, "invoked": {}}
+        failed = [("Test", 32)]
+        for room, seq in failed:
+            state["rooms"][room] = min(int(state["rooms"].get(room, seq)), seq - 1)
+        self.assertEqual(state["rooms"]["Test"], 31)
 
 
 class CommandInvokerTests(unittest.TestCase):

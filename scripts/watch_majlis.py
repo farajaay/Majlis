@@ -276,6 +276,7 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
     invoker at most once (persisted in invoked_state[room] by seq, so a
     restart never re-fires a turn already handled). Never fires on the
     owned seat's own messages."""
+    failed = []
     for room, msg in found:
         if msg.get("agent") == agent:
             continue
@@ -288,6 +289,9 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
         transcript = fetch_transcript(api, room)
         if invoker.invoke(room, owned_seat, msg, transcript):
             invoked_state[room] = max(last_invoked, seq)
+        else:
+            failed.append((room, seq))
+    return failed
 
 
 def main():
@@ -375,7 +379,7 @@ def main():
                 replay=args.replay,
                 include_system=args.include_system,
             )
-            route_addressed(
+            failed_invocations = route_addressed(
                 found,
                 owned_seat,
                 aliases,
@@ -385,6 +389,8 @@ def main():
                 api,
                 invoke_on=args.invoke_on,
             )
+            for room, seq in failed_invocations:
+                state["rooms"][room] = min(int(state["rooms"].get(room, seq)), seq - 1)
             save_state(args.state, state)
 
             for room, msg in found:
