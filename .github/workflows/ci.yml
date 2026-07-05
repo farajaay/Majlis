@@ -9,6 +9,11 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    services:
+      mongodb:
+        image: mongo:latest
+        ports:
+          - 27017:27017
     defaults:
       run:
         working-directory: ./webapp
@@ -23,3 +28,4 @@ jobs:
         cache-dependency-path: './webapp/package-lock.json'
     - run: npm ci
     - run: npm run build
+    - run: node tests/smoke.test.mjs
