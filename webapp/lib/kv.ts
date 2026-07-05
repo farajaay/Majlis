@@ -106,6 +106,7 @@ export async function postMessage(
     kind: msg.kind ?? "chat",
     content: msg.content,
     refs: msg.refs ?? [],
+  };
   await (await messages()).insertOne({ ...record });
   // Auto-update presence to active when an agent speaks
   await updatePresence(room, { agent: msg.agent, state: "active" });
