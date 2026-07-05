@@ -261,49 +261,53 @@ export function Transcript({ me }: { me: string }) {
             </option>
           ))}
         </select>
-        <button onClick={newRoom} title="Open a new session">
+        <button onClick={newRoom} title="Open a new session" className="new-session-btn">
           + session
         </button>
         <div id="seats">
-          {messages
-            .filter((m) => {
-              if (seatsSeen.has(m.agent)) return false;
-              seatsSeen.add(m.agent);
-              return true;
-            })
-            .map((m) => {
-              const p = presenceByAgent.get(m.agent);
-              return (
-                <span className="seat" key={m.agent} title={presenceTooltip(p)}>
-                  <span className="seal" style={{ background: seatColor(m.agent) }}>
-                    {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
+          <div className="seat-strip">
+            {messages
+              .filter((m) => {
+                if (seatsSeen.has(m.agent)) return false;
+                seatsSeen.add(m.agent);
+                return true;
+              })
+              .map((m) => {
+                const p = presenceByAgent.get(m.agent);
+                return (
+                  <span className="seat" key={m.agent} title={presenceTooltip(p)}>
+                    <span className="seal" style={{ background: seatColor(m.agent) }}>
+                      {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
+                    </span>
+                    {displayAgentEmoji(m.agent)} {displayAgentName(m.agent)}
+                    {!isStale(p) && <span className={`status-dot ${p?.state || "away"}`} />}
                   </span>
-                  {displayAgentEmoji(m.agent)} {displayAgentName(m.agent)}
-                  {!isStale(p) && <span className={`status-dot ${p?.state || "away"}`} />}
+                );
+              })}
+            {activePresence
+              .filter((p) => !isStale(p))
+              .map((p) => (
+                <span className="seat" key={p.agent} title={presenceTooltip(p)}>
+                  <span className="seal" style={{ background: seatColor(p.agent) }}>
+                    {displayAgentName(p.agent).slice(0, 2).toUpperCase()}
+                  </span>
+                  {displayAgentEmoji(p.agent)} {displayAgentName(p.agent)}
+                  <span className={`status-dot ${p.state}`} />
                 </span>
-              );
-            })}
-          {activePresence
-            .filter((p) => !isStale(p))
-            .map((p) => (
-              <span className="seat" key={p.agent} title={presenceTooltip(p)}>
-                <span className="seal" style={{ background: seatColor(p.agent) }}>
-                  {displayAgentName(p.agent).slice(0, 2).toUpperCase()}
-                </span>
-                {displayAgentEmoji(p.agent)} {displayAgentName(p.agent)}
-                <span className={`status-dot ${p.state}`} />
-              </span>
-            ))}
-          <span style={{ fontSize: 12, color: "var(--dim)" }}>{displayAgentEmoji(me)} {displayAgentName(me)}</span>
-          <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
-            guide
-          </a>
-          <button onClick={exportTranscript} title="Export Transcript to Markdown">
-            export md
-          </button>
-          <button onClick={() => signOut({ callbackUrl: "/signin" })} title="Sign out">
-            sign out
-          </button>
+              ))}
+          </div>
+          <div className="seat-actions">
+            <span style={{ fontSize: 12, color: "var(--dim)" }}>{displayAgentEmoji(me)} {displayAgentName(me)}</span>
+            <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
+              guide
+            </a>
+            <button onClick={exportTranscript} title="Export Transcript to Markdown">
+              export md
+            </button>
+            <button onClick={() => signOut({ callbackUrl: "/signin" })} title="Sign out">
+              sign out
+            </button>
+          </div>
         </div>
       </header>
 
