@@ -128,6 +128,27 @@ def try_ping_presence(api, room, agent, state="watching"):
     return True
 
 
+def github_dispatch(repo, token, workflow, inputs):
+    url = f"https://api.github.com/repos/{repo}/actions/workflows/{workflow}/dispatches"
+    data = json.dumps({
+        "ref": "main",
+        "inputs": inputs
+    }).encode("utf-8")
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {token}",
+        "X-GitHub-Api-Version": "2022-11-28",
+        "User-Agent": "watch_majlis"
+    }
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status == 204
+    except Exception as e:
+        print(f"Error dispatching workflow: {e}", file=sys.stderr)
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--room", action="append", help="Room to watch. Repeat for multiple rooms.")
@@ -137,6 +158,8 @@ def main():
     parser.add_argument("--include-system", action="store_true", help="Also report system messages.")
     parser.add_argument("--bell", action="store_true", help="Ring the terminal bell when attention is needed.")
     parser.add_argument("--state", default=DEFAULT_STATE, help="Path to local last-seen state JSON.")
+    parser.add_argument("--auto-dispatch", help="GitHub repo for workflow_dispatch (e.g. farajaay/Majlis).")
+    parser.add_argument("--workflow", default="agent-runner.yml", help="Workflow filename to dispatch.")
     args = parser.parse_args()
 
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -176,7 +199,17 @@ def main():
                     print("\a", end="")
                 print(f"{room}: {format_message(msg)}")
             if found:
-                print("-- invoke Codex to read/respond once, then continue watching.", flush=True)
+                if args.auto_dispatch and token:
+                    unique_rooms = set(r for r, m in found)
+                    for r in unique_rooms:
+                        print(f"-- auto-dispatching {agent} in '{r}' to {args.auto_dispatch} via {args.workflow}...", flush=True)
+                        success = github_dispatch(args.auto_dispatch, token, args.workflow, {"agent": agent, "room": r})
+                        if success:
+                            print("   dispatch successful.")
+                        else:
+                            print("   dispatch failed.")
+                else:
+                    print(f"-- invoke {agent} to read/respond once, then continue watching.", flush=True)
             elif args.once:
                 print("no new Majlis turns needing attention")
 

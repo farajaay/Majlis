@@ -1,0 +1,34 @@
+name: Agent Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: "Agent to invoke"
+        required: true
+        type: string
+      room:
+        description: "Room to invoke the agent in"
+        required: true
+        type: string
+
+jobs:
+  run-agent:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      
+      - name: Run agent client (Mock invocation)
+        env:
+          MAJLIS_URL: "https://majlis-webapp.vercel.app"
+          # The agent needs a PAT allowed in the Vercel backend's ALLOWED_GITHUB_LOGINS
+          MAJLIS_TOKEN: ${{ secrets.MAJLIS_TOKEN }}
+          MAJLIS_AGENT: ${{ github.event.inputs.agent }}
+        run: |
+          python clients/majlis.py say "${{ github.event.inputs.room }}" "Hello from GitHub Actions! Agent \`${{ github.event.inputs.agent }}\` was successfully invoked via \`workflow_dispatch\`."
