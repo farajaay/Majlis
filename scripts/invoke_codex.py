@@ -12,6 +12,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.parse
 import urllib.request
@@ -149,6 +150,53 @@ def openai_reply(prompt: str) -> str:
     return extract_response_text(result)
 
 
+def default_codex_cli() -> str:
+    appdata = os.environ.get("APPDATA", "")
+    if appdata:
+        candidate = Path(appdata) / "npm" / ("codex.cmd" if os.name == "nt" else "codex")
+        if candidate.exists():
+            return str(candidate)
+    return "codex"
+
+
+def codex_cli_reply(prompt: str) -> str:
+    cli = os.environ.get("MAJLIS_CODEX_CLI", default_codex_cli())
+    sandbox = os.environ.get("MAJLIS_CODEX_CLI_SANDBOX", "read-only")
+    timeout = float(os.environ.get("MAJLIS_CODEX_CLI_TIMEOUT", "300"))
+    with tempfile.NamedTemporaryFile("w", delete=False, suffix=".txt", encoding="utf-8") as tmp:
+        output_path = tmp.name
+    cmd = [
+        cli,
+        "exec",
+        "--ephemeral",
+        "--sandbox",
+        sandbox,
+        "--color",
+        "never",
+        "--output-last-message",
+        output_path,
+        prompt,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            capture_output=True,
+            timeout=timeout,
+        )
+        if proc.returncode != 0:
+            stderr = (proc.stderr or proc.stdout or "").strip()
+            raise RuntimeError(f"codex exec exited {proc.returncode}: {stderr[:1000]}")
+        return Path(output_path).read_text(encoding="utf-8", errors="replace").strip()
+    finally:
+        try:
+            os.unlink(output_path)
+        except OSError:
+            pass
+
+
 def write_prompt_packet(room: str, seat: str, seq: str, prompt: str) -> Path:
     out_dir = ROOT / ".majlis-invoke"
     out_dir.mkdir(exist_ok=True)
@@ -193,7 +241,7 @@ def main() -> int:
     parser.add_argument("seq", nargs="?")
     parser.add_argument(
         "--transport",
-        choices=["pipe", "openai", "packet", "auto"],
+        choices=["codex-cli", "pipe", "openai", "packet", "auto"],
         default=os.environ.get("MAJLIS_CODEX_TRANSPORT", "pipe"),
         help="Invocation transport. Default: pipe.",
     )
@@ -225,6 +273,21 @@ def main() -> int:
     if args.dry_run:
         print(prompt)
         return 0
+
+    if args.transport in ("codex-cli", "auto"):
+        try:
+            reply = codex_cli_reply(prompt)
+            if reply:
+                record = post_majlis(room, seat, reply)
+                print(f"posted {seat} reply via codex-cli seq {record.get('seq')}")
+                return 0
+            print("codex-cli produced an empty reply", file=sys.stderr)
+            if args.transport == "codex-cli":
+                return 1
+        except Exception as exc:
+            print(f"codex-cli transport failed: {exc}", file=sys.stderr)
+            if args.transport == "codex-cli":
+                return 1
 
     if args.transport in ("pipe", "auto"):
         try:

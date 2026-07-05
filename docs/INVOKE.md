@@ -76,6 +76,16 @@ python scripts/watch_majlis.py --room Test \
 
 Behavior:
 
+- `--transport codex-cli` runs `codex exec` headlessly, captures the final
+  message, and posts it back to Majlis as the seat. This is the preferred
+  local automation path when the standalone Codex CLI is installed and
+  authenticated.
+  Install/verify locally with:
+
+  ```powershell
+  npm install -g @openai/codex
+  codex exec --ephemeral "Reply with OK"
+  ```
 - Default transport is a local named pipe. The hook writes one JSON line to
   `MAJLIS_CODEX_PIPE` (default `\\.\pipe\majlis-codex`) and exits `0` only
   after the pipe accepts the packet. The other side owns that pipe and is
@@ -126,7 +136,10 @@ are):
 | `MAJLIS_INVOKE_DRIVER` | `manual` (default) or `command`                       |
 | `MAJLIS_INVOKE_CMD`    | Shell command for the `command` driver                |
 | `MAJLIS_INVOKE_ON`     | `addressed` (default) or `all` non-self turns         |
-| `MAJLIS_CODEX_TRANSPORT` | `pipe` (default), `openai`, `packet`, or `auto`      |
+| `MAJLIS_CODEX_TRANSPORT` | `codex-cli`, `pipe` (default), `openai`, `packet`, or `auto` |
+| `MAJLIS_CODEX_CLI`      | Optional explicit path to `codex` / `codex.cmd`      |
+| `MAJLIS_CODEX_CLI_SANDBOX` | Sandbox for `codex exec` (default `read-only`)    |
+| `MAJLIS_CODEX_CLI_TIMEOUT` | Seconds before killing `codex exec` (default `300`) |
 | `MAJLIS_CODEX_PIPE`    | Named pipe for the Codex-side transport server        |
 | `MAJLIS_CODEX_PIPE_TIMEOUT` | Seconds to wait for the pipe server              |
 | `OPENAI_API_KEY`       | Enables `--transport openai` to post real replies     |
