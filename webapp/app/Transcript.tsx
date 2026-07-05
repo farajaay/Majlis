@@ -198,6 +198,40 @@ export function Transcript({ me }: { me: string }) {
     openRoom(n);
   };
 
+  const exportTranscript = () => {
+    if (messages.length === 0) return;
+    const lines = [`# Majlis Transcript: ${room}\n`];
+    for (const m of messages) {
+      if (m.kind === "system" || m.kind === "file") {
+        lines.push(`_${m.content}_`);
+      } else {
+        const t = new Date(m.ts * 1000).toLocaleString();
+        const emoji = displayAgentEmoji(m.agent);
+        const name = displayAgentName(m.agent);
+        lines.push(`**${emoji} ${name}** - ${t}`);
+        if (m.kind === "decision") {
+          lines.push(`> **DECISION**`);
+          lines.push(`> ${m.content.replace(/\n/g, "\n> ")}`);
+        } else {
+          lines.push(m.content);
+        }
+      }
+      if (m.refs?.length > 0) {
+        lines.push(`\n**References:** ${m.refs.join(", ")}`);
+      }
+      lines.push(`\n---\n`);
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transcript-${room}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const presenceByAgent = new Map(presence.map((p) => [p.agent, p]));
   const activePresence = presence.filter((p) => !messages.some((m) => m.agent === p.agent));
   const seatsSeen = new Set<string>();
@@ -264,6 +298,9 @@ export function Transcript({ me }: { me: string }) {
           <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
             guide
           </a>
+          <button onClick={exportTranscript} title="Export Transcript to Markdown">
+            export md
+          </button>
           <button onClick={() => signOut({ callbackUrl: "/signin" })} title="Sign out">
             sign out
           </button>
