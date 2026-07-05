@@ -12,21 +12,24 @@
 html,
 body {
   margin: 0;
-  background: var(--ink);
+  background: #E5E1D8; /* Slightly darker than parchment to show unused areas */
   color: var(--paper);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 header {
   position: sticky;
   top: 0;
-  z-index: 5;
-  background: var(--ink);
+  z-index: 10;
+  background: rgba(249, 247, 241, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);
   padding: 10px 16px;
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.02);
 }
 .wordmark {
   font-family: Georgia, "Times New Roman", serif;
@@ -72,6 +75,11 @@ button:focus-visible {
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 3px 10px 3px 4px;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.seat:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 .presence {
   color: var(--dim);
@@ -109,7 +117,12 @@ button:focus-visible {
 main {
   max-width: 860px;
   margin: 0 auto;
-  padding: 18px 16px 120px;
+  padding: 18px 24px 120px;
+  background: var(--ink);
+  border-left: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  min-height: 100vh;
+  box-shadow: 0 0 30px rgba(0, 0, 0, 0.03);
 }
 .turn {
   margin: 22px 0;
@@ -128,7 +141,8 @@ main {
 }
 .turnhead .who {
   font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 700;
 }
 .turnhead time {
   font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -144,6 +158,12 @@ main {
   border-radius: 8px;
   padding: 12px 14px;
   background: rgba(143, 98, 0, 0.06);
+  box-shadow: 0 0 15px rgba(143, 98, 0, 0.15);
+  animation: decisionGlow 2.5s infinite alternate ease-in-out;
+}
+@keyframes decisionGlow {
+  from { box-shadow: 0 0 5px rgba(143, 98, 0, 0.1); border-color: rgba(143, 98, 0, 0.3); }
+  to { box-shadow: 0 0 20px rgba(143, 98, 0, 0.25); border-color: var(--brass); }
 }
 .decision::before {
   content: "قرار · Decision";
@@ -173,7 +193,9 @@ main {
   bottom: 0;
   left: 0;
   right: 0;
-  background: var(--ink);
+  background: rgba(249, 247, 241, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
   padding: 10px 16px;
 }
@@ -223,15 +245,16 @@ main {
 }
 @media (prefers-reduced-motion: no-preference) {
   .turn {
-    animation: rise 0.25s ease-out;
+    animation: rise 0.35s ease-out;
   }
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translateY(4px);
+      transform: translateY(8px);
     }
     to {
       opacity: 1;
+      transform: translateY(0);
     }
   }
 }

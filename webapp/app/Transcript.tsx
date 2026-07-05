@@ -3,7 +3,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 type Message = {
   seq: number;
   ts: number;
@@ -11,6 +12,51 @@ type Message = {
   kind: "chat" | "decision" | "system" | "file";
   content: string;
   refs: string[];
+};
+
+const MarkdownComponents: any = {
+  code({ node, inline, className, children, ...props }: any) {
+    const match = /language-(\w+)/.exec(className || "");
+    const codeString = String(children).replace(/\n$/, "");
+    if (!inline && match) {
+      return (
+        <div style={{ position: "relative", margin: "10px 0" }}>
+          <button
+            onClick={() => navigator.clipboard.writeText(codeString)}
+            style={{
+              position: "absolute",
+              top: 6,
+              right: 6,
+              fontSize: 10,
+              padding: "2px 6px",
+              background: "var(--panel)",
+              border: "1px solid var(--line)",
+              color: "var(--dim)",
+              borderRadius: 4,
+              cursor: "pointer",
+            }}
+            title="Copy Code"
+          >
+            Copy
+          </button>
+          <SyntaxHighlighter
+            style={oneLight as any}
+            language={match[1]}
+            PreTag="div"
+            customStyle={{ margin: 0, borderRadius: 6, fontSize: 13, background: "var(--panel)", border: "1px solid var(--line)" }}
+            {...props}
+          >
+            {codeString}
+          </SyntaxHighlighter>
+        </div>
+      );
+    }
+    return (
+      <code className={className} {...props}>
+        {children}
+      </code>
+    );
+  },
 };
 type FileMeta = { name: string; size: number; ts: number };
 type RoomSummary = { room: string; messages: number; agents: string[]; last: number | null };
@@ -25,6 +71,28 @@ function seatColor(agent: string) {
   let h = 0;
   for (const c of agent) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return SEAT_COLORS[h % SEAT_COLORS.length];
+}
+
+const NICKNAMES: Record<string, string> = {
+  "claude-code": "Cody",
+  "codex": "Dex",
+  "gemini": "Jim",
+  "farajaay": "Ahmad",
+};
+
+const EMOJIS: Record<string, string> = {
+  "claude-code": "\u{2699}\u{FE0F}",
+  "codex": "\u{1F4BB}",
+  "gemini": "\u{2728}",
+  "farajaay": "\u{1F451}",
+};
+
+function displayAgentName(agent: string) {
+  return NICKNAMES[agent] || agent;
+}
+
+function displayAgentEmoji(agent: string) {
+  return EMOJIS[agent] || "\u{1F464}";
 }
 
 async function api(path: string, opts: RequestInit = {}) {
@@ -130,6 +198,40 @@ export function Transcript({ me }: { me: string }) {
     openRoom(n);
   };
 
+  const exportTranscript = () => {
+    if (messages.length === 0) return;
+    const lines = [`# Majlis Transcript: ${room}\n`];
+    for (const m of messages) {
+      if (m.kind === "system" || m.kind === "file") {
+        lines.push(`_${m.content}_`);
+      } else {
+        const t = new Date(m.ts * 1000).toLocaleString();
+        const emoji = displayAgentEmoji(m.agent);
+        const name = displayAgentName(m.agent);
+        lines.push(`**${emoji} ${name}** - ${t}`);
+        if (m.kind === "decision") {
+          lines.push(`> **DECISION**`);
+          lines.push(`> ${m.content.replace(/\n/g, "\n> ")}`);
+        } else {
+          lines.push(m.content);
+        }
+      }
+      if (m.refs?.length > 0) {
+        lines.push(`\n**References:** ${m.refs.join(", ")}`);
+      }
+      lines.push(`\n---\n`);
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `transcript-${room}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const presenceByAgent = new Map(presence.map((p) => [p.agent, p]));
   const activePresence = presence.filter((p) => !messages.some((m) => m.agent === p.agent));
   const seatsSeen = new Set<string>();
@@ -174,9 +276,9 @@ export function Transcript({ me }: { me: string }) {
               return (
                 <span className="seat" key={m.agent} title={presenceTooltip(p)}>
                   <span className="seal" style={{ background: seatColor(m.agent) }}>
-                    {m.agent.slice(0, 2).toUpperCase()}
+                    {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
                   </span>
-                  {m.agent}
+                  {displayAgentEmoji(m.agent)} {displayAgentName(m.agent)}
                   {!isStale(p) && <span className={`status-dot ${p?.state || "away"}`} />}
                 </span>
               );
@@ -186,16 +288,19 @@ export function Transcript({ me }: { me: string }) {
             .map((p) => (
               <span className="seat" key={p.agent} title={presenceTooltip(p)}>
                 <span className="seal" style={{ background: seatColor(p.agent) }}>
-                  {p.agent.slice(0, 2).toUpperCase()}
+                  {displayAgentName(p.agent).slice(0, 2).toUpperCase()}
                 </span>
-                {p.agent}
+                {displayAgentEmoji(p.agent)} {displayAgentName(p.agent)}
                 <span className={`status-dot ${p.state}`} />
               </span>
             ))}
-          <span style={{ fontSize: 12, color: "var(--dim)" }}>{me}</span>
+          <span style={{ fontSize: 12, color: "var(--dim)" }}>{displayAgentEmoji(me)} {displayAgentName(me)}</span>
           <a href="/guide" style={{ fontSize: 12 }} title="How to use Majlis">
             guide
           </a>
+          <button onClick={exportTranscript} title="Export Transcript to Markdown">
+            export md
+          </button>
           <button onClick={() => signOut({ callbackUrl: "/signin" })} title="Sign out">
             sign out
           </button>
@@ -230,21 +335,21 @@ export function Transcript({ me }: { me: string }) {
               <div className="turn" style={{ color: c }} key={m.seq}>
                 <div className="turnhead">
                   <span className="seal" style={{ background: c }}>
-                    {m.agent.slice(0, 2).toUpperCase()}
+                    {displayAgentName(m.agent).slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="who">{m.agent}</span>
+                  <span className="who">{displayAgentEmoji(m.agent)} {displayAgentName(m.agent)}</span>
                   <span className="rule"></span>
                   <time>{t}</time>
                 </div>
                 {m.kind === "decision" ? (
                   <div className="decision body" style={{ color: "var(--paper)" }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{m.content}</ReactMarkdown>
                   </div>
                 ) : m.kind === "system" || m.kind === "file" ? (
                   <div className="sys">{m.content}</div>
                 ) : (
                   <div className="body markdown-body" style={{ color: "var(--paper)" }}>
-                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{m.content}</ReactMarkdown>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]} components={MarkdownComponents}>{m.content}</ReactMarkdown>
                   </div>
                 )}
                 {m.refs?.length > 0 && (
