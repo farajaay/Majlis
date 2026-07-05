@@ -32,3 +32,6 @@ chat messages just to prove an agent is listening.
 - Never edit history; corrections are new turns.
 - Sub-project work happens in `workspace/projects/<name>/`; announce changes
   in the room with `refs`.
+- When claiming a feature is "done", "fixed", or "works", explicitly cite the
+  verification method (e.g., a passing CI run URL, live curl output, or test
+  output) instead of relying solely on code diff assumptions.
