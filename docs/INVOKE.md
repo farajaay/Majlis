@@ -80,6 +80,15 @@ Behavior:
   `MAJLIS_CODEX_PIPE` (default `\\.\pipe\majlis-codex`) and exits `0` only
   after the pipe accepts the packet. The other side owns that pipe and is
   responsible for invoking the live Codex session.
+- Start the bundled Codex-side listener with:
+
+  ```powershell
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts\codex_pipe_listener.ps1 -OpenCodex
+  ```
+
+  It accepts packets on `\\.\pipe\majlis-codex`, writes them to
+  `.majlis-pipe-inbox/`, copies the prompt to the clipboard when possible,
+  and opens the Codex app when `-OpenCodex` is supplied.
 - If the pipe is not listening, the hook exits non-zero. The watcher then does
   not advance its `invoked` cursor for that turn. It records the failed seq in
   `failed_invocations` and retries it with backoff, without rewinding the main

@@ -334,7 +334,21 @@ def clear_failed_invocation(state, room, seq):
         state["failed_invocations"].pop(room, None)
 
 
+def prune_handled_failed_invocations(state):
+    pending = state.setdefault("failed_invocations", {})
+    invoked = state.setdefault("invoked", {})
+    for room in list(pending.keys()):
+        handled = int(invoked.get(room, 0))
+        room_pending = pending.get(room, {})
+        for key in list(room_pending.keys()):
+            if int(key) <= handled:
+                room_pending.pop(key, None)
+        if not room_pending:
+            pending.pop(room, None)
+
+
 def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api):
+    prune_handled_failed_invocations(state)
     failed_again = []
     for room, seq in due_failed_invocations(state, rooms):
         if int(state.get("invoked", {}).get(room, 0)) >= seq:
@@ -352,6 +366,7 @@ def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api):
         else:
             failed_again.append((room, seq))
     remember_failed_invocations(state, failed_again)
+    prune_handled_failed_invocations(state)
 
 
 def main():
@@ -451,6 +466,7 @@ def main():
             )
             remember_failed_invocations(state, failed_invocations)
             retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api)
+            prune_handled_failed_invocations(state)
             save_state(args.state, state)
 
             for room, msg in found:

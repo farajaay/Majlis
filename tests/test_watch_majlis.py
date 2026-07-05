@@ -217,6 +217,20 @@ class FailedInvocationBackoffTests(unittest.TestCase):
         watch_majlis.clear_failed_invocation(state, "Test", 12)
         self.assertEqual(state["failed_invocations"], {})
 
+    def test_prune_handled_failed_invocations(self):
+        state = {
+            "invoked": {"Test": 12},
+            "failed_invocations": {
+                "Test": {
+                    "11": {"seq": 11},
+                    "12": {"seq": 12},
+                    "13": {"seq": 13},
+                }
+            },
+        }
+        watch_majlis.prune_handled_failed_invocations(state)
+        self.assertEqual(list(state["failed_invocations"]["Test"].keys()), ["13"])
+
 
 class PollOnceRoutingIntegrationTests(unittest.TestCase):
     def test_own_messages_never_reach_routing_but_others_do(self):
