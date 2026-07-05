@@ -29,8 +29,11 @@ import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_STATE = os.path.join(ROOT, ".majlis-watch-state.json")
+DEFAULT_INVOCATION_TTL = 300
 ATTENTION_KINDS = {"chat", "decision", "file"}
 MENTION_RE_CACHE = {}
+ACTIVE_INVOCATION_STATUSES = {"claimed", "working"}
+DONE_INVOCATION_STATUSES = {"posted", "superseded"}
 
 
 def load_dotenv(path):
@@ -63,7 +66,7 @@ def request_json(base_url, path, key="", token="", data=None, method=None):
 
 def load_state(path):
     if not os.path.exists(path):
-        return {"rooms": {}, "invoked": {}, "failed_invocations": {}}
+        return {"rooms": {}, "invoked": {}, "failed_invocations": {}, "invocations": {}}
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data.get("rooms"), dict):
@@ -72,6 +75,8 @@ def load_state(path):
         data["invoked"] = {}
     if not isinstance(data.get("failed_invocations"), dict):
         data["failed_invocations"] = {}
+    if not isinstance(data.get("invocations"), dict):
+        data["invocations"] = {}
     return data
 
 
@@ -99,6 +104,141 @@ def format_message(msg):
     ts = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(msg["ts"])))
     content = str(msg.get("content", "")).replace("\r", " ").replace("\n", " ")
     return f"[{msg['seq']:>4}] {ts} <{msg['agent']}> ({msg['kind']}) {content}"
+
+
+class InvocationResult:
+    def __init__(self, ok, posted_seq=None, last_error="", stale=False):
+        self.ok = bool(ok)
+        self.posted_seq = posted_seq
+        self.last_error = last_error or ""
+        self.stale = bool(stale)
+
+    def __bool__(self):
+        return self.ok
+
+
+def normalize_invocation_result(result):
+    if isinstance(result, InvocationResult):
+        return result
+    if isinstance(result, dict):
+        return InvocationResult(
+            result.get("ok", False),
+            posted_seq=result.get("posted_seq"),
+            last_error=result.get("last_error", ""),
+            stale=result.get("stale", False),
+        )
+    return InvocationResult(bool(result))
+
+
+def parse_posted_seq(text):
+    if not text:
+        return None
+    matches = re.findall(r"\b(?:posted|sent)\b[^\n\r]*\bseq\s+(\d+)\b", text, flags=re.IGNORECASE)
+    if not matches:
+        return None
+    return int(matches[-1])
+
+
+def _invocation_bucket(invocations, room, seat):
+    room_bucket = invocations.setdefault(room, {})
+    return room_bucket.setdefault(seat, {})
+
+
+def get_invocation(invocations, room, seat, trigger_seq):
+    bucket = invocations.get(room, {}).get(seat, {})
+    return bucket.get(str(int(trigger_seq)))
+
+
+def expire_stale_invocations(invocations, now=None):
+    now = time.time() if now is None else now
+    for room_bucket in invocations.values():
+        if not isinstance(room_bucket, dict):
+            continue
+        for seat_bucket in room_bucket.values():
+            if not isinstance(seat_bucket, dict):
+                continue
+            for record in seat_bucket.values():
+                if not isinstance(record, dict):
+                    continue
+                expires_at = record.get("expires_at")
+                if record.get("status") in ACTIVE_INVOCATION_STATUSES and expires_at is not None:
+                    try:
+                        expired = float(expires_at) <= now
+                    except (TypeError, ValueError):
+                        expired = False
+                    if expired:
+                        record["status"] = "stale"
+                        record["updated_at"] = now
+                        record["last_error"] = record.get("last_error") or "invocation lease expired"
+
+
+def claim_invocation(invocations, room, seat, trigger_seq, scope="addressed", now=None, ttl=DEFAULT_INVOCATION_TTL):
+    now = time.time() if now is None else now
+    trigger_seq = int(trigger_seq)
+    expire_stale_invocations(invocations, now=now)
+    bucket = _invocation_bucket(invocations, room, seat)
+    key = str(trigger_seq)
+    existing = bucket.get(key)
+    if existing and existing.get("status") in ACTIVE_INVOCATION_STATUSES | DONE_INVOCATION_STATUSES:
+        return existing, False
+
+    for other_key, record in bucket.items():
+        if not isinstance(record, dict):
+            continue
+        try:
+            other_seq = int(other_key)
+        except ValueError:
+            continue
+        if other_seq < trigger_seq and record.get("status") in {"claimed", "working", "failed", "stale"}:
+            record["status"] = "superseded"
+            record["updated_at"] = now
+
+    record = existing or {
+        "room": room,
+        "seat": seat,
+        "scope": scope,
+        "trigger_seq": trigger_seq,
+        "started_at": now,
+        "posted_seq": None,
+    }
+    record.update({
+        "room": room,
+        "seat": seat,
+        "scope": scope,
+        "trigger_seq": trigger_seq,
+        "status": "claimed",
+        "started_at": now,
+        "updated_at": now,
+        "expires_at": now + ttl,
+        "posted_seq": None,
+    })
+    record.setdefault("last_error", "")
+    bucket[key] = record
+    return record, True
+
+
+def mark_invocation_working(record, now=None):
+    now = time.time() if now is None else now
+    record["status"] = "working"
+    record["updated_at"] = now
+
+
+def mark_invocation_posted(record, posted_seq=None, now=None):
+    now = time.time() if now is None else now
+    record["status"] = "posted"
+    record["updated_at"] = now
+    record["expires_at"] = None
+    record["last_error"] = ""
+    if posted_seq is not None:
+        record["posted_seq"] = int(posted_seq)
+
+
+def mark_invocation_failed(record, last_error="", stale=False, now=None):
+    now = time.time() if now is None else now
+    record["status"] = "stale" if stale else "failed"
+    record["updated_at"] = now
+    record["expires_at"] = None
+    record["last_error"] = str(last_error or ("invocation timed out" if stale else "invocation failed"))
 
 
 def poll_once(api, rooms, state, agent, replay=False, include_system=False):
@@ -204,7 +344,7 @@ class ManualNotifyInvoker(Invoker):
             f"invoke {seat} to read and respond once.",
             flush=True,
         )
-        return True
+        return InvocationResult(True)
 
 
 class CommandInvoker(Invoker):
@@ -242,9 +382,13 @@ class CommandInvoker(Invoker):
                 timeout=self.timeout,
                 capture_output=True,
             )
+        except subprocess.TimeoutExpired as exc:
+            msg = f"invoke command timed out after {self.timeout}s"
+            print(f"-- {msg} for @{seat} in '{room}': {exc}", file=sys.stderr, flush=True)
+            return InvocationResult(False, last_error=msg, stale=True)
         except Exception as exc:
             print(f"-- invoke command failed for @{seat} in '{room}': {exc}", file=sys.stderr, flush=True)
-            return False
+            return InvocationResult(False, last_error=str(exc))
         if proc.stdout:
             print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
         if proc.stderr:
@@ -255,8 +399,9 @@ class CommandInvoker(Invoker):
                 file=sys.stderr,
                 flush=True,
             )
-            return False
-        return True
+            detail = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()
+            return InvocationResult(False, last_error=detail[:1000])
+        return InvocationResult(True, posted_seq=parse_posted_seq(proc.stdout or ""))
 
 
 def build_invoker(driver, command):
@@ -273,12 +418,26 @@ def fetch_transcript(api, room):
     return "\n".join(lines) + ("\n" if lines else "")
 
 
-def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api, invoke_on="addressed"):
+def route_addressed(
+    found,
+    owned_seat,
+    aliases,
+    agent,
+    invoked_state,
+    invoker,
+    api,
+    invoke_on="addressed",
+    invocation_state=None,
+    save_claim=None,
+    now=None,
+    invocation_ttl=DEFAULT_INVOCATION_TTL,
+):
     """For each newly-seen message that addresses `owned_seat`, fire the
-    invoker at most once (persisted in invoked_state[room] by seq, so a
-    restart never re-fires a turn already handled). Never fires on the
-    owned seat's own messages."""
+    invoker at most once. New code records a per-seat invocation row keyed by
+    (room, seat, trigger_seq); invoked_state remains as a compatibility cursor.
+    Never fires on the owned seat's own messages."""
     failed = []
+    now = time.time() if now is None else now
     for room, msg in found:
         if msg.get("agent") == agent:
             continue
@@ -288,10 +447,31 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
         last_invoked = int(invoked_state.get(room, 0))
         if seq <= last_invoked:
             continue
+        record = None
+        if invocation_state is not None:
+            record, claimed = claim_invocation(
+                invocation_state,
+                room,
+                owned_seat,
+                seq,
+                scope=invoke_on,
+                now=now,
+                ttl=invocation_ttl,
+            )
+            if not claimed:
+                continue
+            mark_invocation_working(record, now=now)
+            if save_claim is not None:
+                save_claim()
         transcript = fetch_transcript(api, room)
-        if invoker.invoke(room, owned_seat, msg, transcript):
+        result = normalize_invocation_result(invoker.invoke(room, owned_seat, msg, transcript))
+        if result:
             invoked_state[room] = max(last_invoked, seq)
+            if record is not None:
+                mark_invocation_posted(record, posted_seq=result.posted_seq)
         else:
+            if record is not None:
+                mark_invocation_failed(record, last_error=result.last_error, stale=result.stale)
             failed.append((room, seq))
     return failed
 
@@ -334,39 +514,84 @@ def clear_failed_invocation(state, room, seq):
         state["failed_invocations"].pop(room, None)
 
 
-def prune_handled_failed_invocations(state):
+def invocation_is_done(state, room, seat, seq):
+    record = get_invocation(state.setdefault("invocations", {}), room, seat, seq)
+    if record:
+        return record.get("status") in DONE_INVOCATION_STATUSES
+    return int(state.setdefault("invoked", {}).get(room, 0)) >= int(seq)
+
+
+def prune_handled_failed_invocations(state, seat=None):
     pending = state.setdefault("failed_invocations", {})
     invoked = state.setdefault("invoked", {})
     for room in list(pending.keys()):
         handled = int(invoked.get(room, 0))
         room_pending = pending.get(room, {})
         for key in list(room_pending.keys()):
-            if int(key) <= handled:
+            if seat and state.get("invocations"):
+                done = invocation_is_done(state, room, seat, int(key))
+            else:
+                done = int(key) <= handled
+            if done:
                 room_pending.pop(key, None)
         if not room_pending:
             pending.pop(room, None)
 
 
-def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api):
-    prune_handled_failed_invocations(state)
+def retry_failed_invocations(
+    state,
+    rooms,
+    owned_seat,
+    agent,
+    invoker,
+    api,
+    save_claim=None,
+    now=None,
+    invocation_ttl=DEFAULT_INVOCATION_TTL,
+):
+    now = time.time() if now is None else now
+    prune_handled_failed_invocations(state, seat=owned_seat)
     failed_again = []
     for room, seq in due_failed_invocations(state, rooms):
-        if int(state.get("invoked", {}).get(room, 0)) >= seq:
+        if invocation_is_done(state, room, owned_seat, seq):
             clear_failed_invocation(state, room, seq)
             continue
+        record = get_invocation(state.setdefault("invocations", {}), room, owned_seat, seq)
+        if record and record.get("status") in ACTIVE_INVOCATION_STATUSES:
+            expire_stale_invocations(state["invocations"], now=now)
+            record = get_invocation(state["invocations"], room, owned_seat, seq)
+            if record and record.get("status") in ACTIVE_INVOCATION_STATUSES:
+                continue
         messages = api(f"/api/rooms/{urllib.parse.quote(room, safe='')}/messages?since={seq - 1}")
         msg = next((m for m in messages if int(m.get("seq", 0)) == seq), None)
         if not msg or msg.get("agent") == agent:
             clear_failed_invocation(state, room, seq)
             continue
+        record, claimed = claim_invocation(
+            state.setdefault("invocations", {}),
+            room,
+            owned_seat,
+            seq,
+            scope="retry",
+            now=now,
+            ttl=invocation_ttl,
+        )
+        if not claimed:
+            continue
+        mark_invocation_working(record, now=now)
+        if save_claim is not None:
+            save_claim()
         transcript = fetch_transcript(api, room)
-        if invoker.invoke(room, owned_seat, msg, transcript):
+        result = normalize_invocation_result(invoker.invoke(room, owned_seat, msg, transcript))
+        if result:
             state["invoked"][room] = max(int(state["invoked"].get(room, 0)), seq)
+            mark_invocation_posted(record, posted_seq=result.posted_seq)
             clear_failed_invocation(state, room, seq)
         else:
+            mark_invocation_failed(record, last_error=result.last_error, stale=result.stale)
             failed_again.append((room, seq))
     remember_failed_invocations(state, failed_again)
-    prune_handled_failed_invocations(state)
+    prune_handled_failed_invocations(state, seat=owned_seat)
 
 
 def main():
@@ -411,6 +636,12 @@ def main():
         default=os.environ.get("MAJLIS_INVOKE_ON", "addressed"),
         help="'addressed' invokes only @seat/prefix turns; 'all' invokes on every new non-self turn.",
     )
+    parser.add_argument(
+        "--invoke-ttl",
+        type=float,
+        default=float(os.environ.get("MAJLIS_INVOKE_TTL", str(DEFAULT_INVOCATION_TTL))),
+        help="Seconds before an unfinished invocation claim becomes stale.",
+    )
     args = parser.parse_args()
 
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -435,6 +666,9 @@ def main():
     state = load_state(args.state)
     state["url"] = url
     state["agent"] = agent
+
+    def save_current_state():
+        save_state(args.state, state)
 
     print(
         f"watching {url} as {agent}; owned seat={owned_seat}; "
@@ -463,10 +697,22 @@ def main():
                 invoker,
                 api,
                 invoke_on=args.invoke_on,
+                invocation_state=state["invocations"],
+                save_claim=save_current_state,
+                invocation_ttl=args.invoke_ttl,
             )
             remember_failed_invocations(state, failed_invocations)
-            retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api)
-            prune_handled_failed_invocations(state)
+            retry_failed_invocations(
+                state,
+                rooms,
+                owned_seat,
+                agent,
+                invoker,
+                api,
+                save_claim=save_current_state,
+                invocation_ttl=args.invoke_ttl,
+            )
+            prune_handled_failed_invocations(state, seat=owned_seat)
             save_state(args.state, state)
 
             for room, msg in found:

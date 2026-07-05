@@ -136,6 +136,7 @@ are):
 | `MAJLIS_INVOKE_DRIVER` | `manual` (default) or `command`                       |
 | `MAJLIS_INVOKE_CMD`    | Shell command for the `command` driver                |
 | `MAJLIS_INVOKE_ON`     | `addressed` (default) or `all` non-self turns         |
+| `MAJLIS_INVOKE_TTL`    | Seconds before an unfinished claim is marked `stale` (default `300`) |
 | `MAJLIS_CODEX_TRANSPORT` | `codex-cli`, `pipe` (default), `openai`, `packet`, or `auto` |
 | `MAJLIS_CODEX_CLI`      | Optional explicit path to `codex` / `codex.cmd`      |
 | `MAJLIS_CODEX_CLI_SANDBOX` | Sandbox for `codex exec` (default `read-only`)    |
@@ -165,18 +166,43 @@ Or manual/default (just logs, no automation configured):
 python scripts/watch_majlis.py --room Test
 ```
 
+## Invocation operational store
+
+The watcher keeps operational invocation metadata in the same JSON state file
+as its polling cursors (`--state`, default `.majlis-watch-state.json`). This
+is not transcript history. The `invocations` section is keyed by:
+
+```text
+room -> seat -> trigger_seq
+```
+
+Each row stores `room`, `seat`, `scope`, `trigger_seq`, `status`,
+`started_at`, `updated_at`, `expires_at`, `last_error`, and `posted_seq`.
+Statuses are `claimed`, `working`, `posted`, `failed`, `stale`, and
+`superseded`.
+
+Before firing any invoker, `watch_majlis.py` creates a `claimed` record and
+moves it to `working`. If another watcher sees an active record for the same
+`(room, seat, trigger_seq)`, it skips that invocation. On success the row
+becomes `posted`; command transports that print output like `posted ... seq
+123` or `sent ... seq 123` populate `posted_seq`. On non-zero exit the row
+becomes `failed` and keeps `last_error`. On command timeout the row becomes
+`stale`.
+
+The older `invoked` cursor remains for restart compatibility, and
+`failed_invocations` still drives retry backoff. Retries reclaim `failed` or
+`stale` records through the same store. A newer claim for the same room/seat
+marks older unfinished records `superseded`.
+
 ## Idempotency / loop-safety
 
 - A seat is never invoked by its own messages (`msg.agent == owned seat`
   is filtered before routing even sees it — same guard the existing
   alert logic already used).
-- Each addressed turn fires **at most once**: the watcher persists the
-  highest invoked `seq` per room in its state file (`--state`, default
-  `.majlis-watch-state.json`, key `"invoked"`), separate from the
-  existing `"rooms"` polling cursor. A restart reloads that state, so a
-  turn already handled is not re-fired, and (as with the existing
-  polling cursor) old backlog isn't re-delivered unless you pass
-  `--replay`.
+- Each addressed turn fires **at most once**: the watcher persists a per-seat
+  invocation record before firing the transport. A restart reloads that state,
+  so an active or posted turn is not re-fired, and (as with the existing
+  polling cursor) old backlog isn't re-delivered unless you pass `--replay`.
 - Multiple distinct addressed turns in one poll each get their own
   invocation call — the dedupe is per-turn (`seq`), not per-poll-batch.
 

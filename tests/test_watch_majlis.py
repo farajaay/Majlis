@@ -135,11 +135,12 @@ class RouteAddressedTests(unittest.TestCase):
 
 class CommandInvokerTests(unittest.TestCase):
     def test_runs_command_with_transcript_on_stdin_and_env(self):
-        fake_result = mock.Mock(returncode=0, stdout="", stderr="")
+        fake_result = mock.Mock(returncode=0, stdout="posted codex reply seq 42\n", stderr="")
         with mock.patch.object(watch_majlis.subprocess, "run", return_value=fake_result) as run_mock:
             invoker = watch_majlis.CommandInvoker("echo hi")
             ok = invoker.invoke("Test", "codex", {"seq": 5}, "transcript text\n")
         self.assertTrue(ok)
+        self.assertEqual(ok.posted_seq, 42)
         run_mock.assert_called_once()
         _, kwargs = run_mock.call_args
         self.assertEqual(kwargs["input"], "transcript text\n")
@@ -191,13 +192,157 @@ class BuildInvokerTests(unittest.TestCase):
 class LoadStateTests(unittest.TestCase):
     def test_missing_file_has_invoked_key(self):
         state = watch_majlis.load_state(os.path.join(ROOT, "no-such-state-file.json"))
-        self.assertEqual(state, {"rooms": {}, "invoked": {}, "failed_invocations": {}})
+        self.assertEqual(state, {"rooms": {}, "invoked": {}, "failed_invocations": {}, "invocations": {}})
 
     def test_existing_state_gets_failed_invocations_key(self):
         with mock.patch.object(watch_majlis.os.path, "exists", return_value=True), \
              mock.patch("builtins.open", mock.mock_open(read_data='{"rooms":{},"invoked":{}}')):
             state = watch_majlis.load_state("state.json")
         self.assertEqual(state["failed_invocations"], {})
+        self.assertEqual(state["invocations"], {})
+
+
+class InvocationStoreTests(unittest.TestCase):
+    def test_claim_creates_record_keyed_by_room_seat_trigger_seq(self):
+        store = {}
+        record, claimed = watch_majlis.claim_invocation(
+            store, "Test", "codex", 288, scope="addressed", now=100, ttl=30
+        )
+        self.assertTrue(claimed)
+        self.assertIs(record, store["Test"]["codex"]["288"])
+        self.assertEqual(record["status"], "claimed")
+        self.assertEqual(record["scope"], "addressed")
+        self.assertEqual(record["started_at"], 100)
+        self.assertEqual(record["expires_at"], 130)
+
+    def test_duplicate_active_claim_is_prevented(self):
+        store = {}
+        first, claimed_first = watch_majlis.claim_invocation(store, "Test", "codex", 288, now=100)
+        second, claimed_second = watch_majlis.claim_invocation(store, "Test", "codex", 288, now=101)
+        self.assertTrue(claimed_first)
+        self.assertFalse(claimed_second)
+        self.assertIs(first, second)
+        self.assertEqual(second["started_at"], 100)
+
+    def test_expired_claim_becomes_stale_and_can_be_retried(self):
+        store = {}
+        record, _ = watch_majlis.claim_invocation(store, "Test", "codex", 288, now=100, ttl=10)
+        watch_majlis.mark_invocation_working(record, now=101)
+        watch_majlis.expire_stale_invocations(store, now=111)
+        self.assertEqual(record["status"], "stale")
+        self.assertEqual(record["last_error"], "invocation lease expired")
+
+        retried, claimed = watch_majlis.claim_invocation(store, "Test", "codex", 288, now=112, ttl=10)
+        self.assertTrue(claimed)
+        self.assertIs(retried, record)
+        self.assertEqual(retried["status"], "claimed")
+        self.assertEqual(retried["expires_at"], 122)
+
+    def test_newer_claim_supersedes_older_unfinished_record(self):
+        store = {}
+        old, _ = watch_majlis.claim_invocation(store, "Test", "codex", 288, now=100)
+        watch_majlis.mark_invocation_failed(old, "pipe unavailable", now=101)
+        new, claimed = watch_majlis.claim_invocation(store, "Test", "codex", 290, now=102)
+        self.assertTrue(claimed)
+        self.assertEqual(old["status"], "superseded")
+        self.assertEqual(new["status"], "claimed")
+
+    def test_route_records_posted_seq_on_success(self):
+        api = mock.Mock(return_value=[])
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(True, posted_seq=321)
+        invocations = {}
+        invoked_state = {}
+        found = [("Test", {"seq": 288, "agent": "farajaay", "kind": "chat", "content": "@codex go"})]
+
+        failed = watch_majlis.route_addressed(
+            found,
+            "codex",
+            [],
+            "codex",
+            invoked_state,
+            invoker,
+            api,
+            invocation_state=invocations,
+            now=100,
+        )
+
+        record = invocations["Test"]["codex"]["288"]
+        self.assertEqual(failed, [])
+        self.assertEqual(invoked_state["Test"], 288)
+        self.assertEqual(record["status"], "posted")
+        self.assertEqual(record["posted_seq"], 321)
+
+    def test_route_keeps_last_error_on_failure(self):
+        api = mock.Mock(return_value=[])
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(False, last_error="pipe unavailable")
+        invocations = {}
+        found = [("Test", {"seq": 288, "agent": "farajaay", "kind": "chat", "content": "@codex go"})]
+
+        failed = watch_majlis.route_addressed(
+            found,
+            "codex",
+            [],
+            "codex",
+            {},
+            invoker,
+            api,
+            invocation_state=invocations,
+            now=100,
+        )
+
+        record = invocations["Test"]["codex"]["288"]
+        self.assertEqual(failed, [("Test", 288)])
+        self.assertEqual(record["status"], "failed")
+        self.assertEqual(record["last_error"], "pipe unavailable")
+
+    def test_route_marks_timeout_as_stale(self):
+        api = mock.Mock(return_value=[])
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(False, last_error="timeout", stale=True)
+        invocations = {}
+        found = [("Test", {"seq": 288, "agent": "farajaay", "kind": "chat", "content": "@codex go"})]
+
+        watch_majlis.route_addressed(
+            found,
+            "codex",
+            [],
+            "codex",
+            {},
+            invoker,
+            api,
+            invocation_state=invocations,
+            now=100,
+        )
+
+        record = invocations["Test"]["codex"]["288"]
+        self.assertEqual(record["status"], "stale")
+        self.assertEqual(record["last_error"], "timeout")
+
+    def test_retry_failed_invocation_reclaims_record_and_posts(self):
+        state = {
+            "invoked": {},
+            "failed_invocations": {"Test": {"288": {"seq": 288, "attempts": 1, "next_retry": 90}}},
+            "invocations": {},
+        }
+        record, _ = watch_majlis.claim_invocation(state["invocations"], "Test", "codex", 288, now=80)
+        watch_majlis.mark_invocation_failed(record, "pipe unavailable", now=81)
+
+        def api(path, data=None, method=None):
+            if "since=287" in path:
+                return [{"seq": 288, "agent": "farajaay", "kind": "chat", "content": "@codex retry"}]
+            return []
+
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(True, posted_seq=333)
+
+        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api, now=100)
+
+        self.assertEqual(state["failed_invocations"], {})
+        self.assertEqual(state["invoked"]["Test"], 288)
+        self.assertEqual(record["status"], "posted")
+        self.assertEqual(record["posted_seq"], 333)
 
 
 class FailedInvocationBackoffTests(unittest.TestCase):

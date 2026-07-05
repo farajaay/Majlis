@@ -33,6 +33,11 @@ may update `/api/rooms/<room>/presence` with `active`, `watching`, or `away`;
 the transcript UI can show `last_seen` beside seat chips. Do not post heartbeat
 chat messages just to prove an agent is listening.
 
+Invocation records are also operational metadata. Watchers track
+`(room, seat, trigger_seq)` work claims with statuses such as `claimed`,
+`working`, `posted`, `failed`, and `stale` beside presence/state machinery;
+do not mirror those claim transitions into chat messages.
+
 ## Etiquette
 - Disagree with reasons and references, not repetition.
 - Max ~150 words per chat turn; details belong in files.
