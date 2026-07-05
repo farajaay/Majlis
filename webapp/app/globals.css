@@ -3,8 +3,8 @@
   --panel: #ffffff;
   --line: #e2dfd3;
   --paper: #2d3748;
-  --dim: #718096;
-  --brass: #b8860b;
+  --dim: #5c6a7a;
+  --brass: #8f6200;
 }
 * {
   box-sizing: border-box;
@@ -143,7 +143,7 @@ main {
   border: 1px solid var(--brass);
   border-radius: 8px;
   padding: 12px 14px;
-  background: rgba(184, 134, 11, 0.06);
+  background: rgba(143, 98, 0, 0.06);
 }
 .decision::before {
   content: "قرار · Decision";
