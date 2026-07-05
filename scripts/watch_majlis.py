@@ -234,6 +234,8 @@ class CommandInvoker(Invoker):
                 shell=True,
                 input=transcript,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 env=env,
                 timeout=self.timeout,
                 capture_output=True,
