@@ -4,14 +4,23 @@
 Loads .env from the repo root when present. The token/key is only sent as an
 HTTP header and is never printed.
 
+This watcher owns one seat (MAJLIS_AGENT, or --owned-seat). When a new turn
+addresses that seat (`@seat` anywhere, or `seat:`/`seat -`/`seat —` at the
+start of a message), it fires an invocation hook — see docs/INVOKE.md for
+the driver model (manual/notify by default, or a configurable local command).
+
 Examples:
   python scripts/watch_majlis.py
   python scripts/watch_majlis.py --room Test --interval 5
   python scripts/watch_majlis.py --once --replay
+  python scripts/watch_majlis.py --invoke-driver command --invoke-cmd "./invoke_codex.sh"
 """
 import argparse
 import json
 import os
+import re
+import shlex
+import subprocess
 import sys
 import time
 import urllib.parse
@@ -21,6 +30,7 @@ import urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_STATE = os.path.join(ROOT, ".majlis-watch-state.json")
 ATTENTION_KINDS = {"chat", "decision", "file"}
+MENTION_RE_CACHE = {}
 
 
 def load_dotenv(path):
@@ -53,11 +63,13 @@ def request_json(base_url, path, key="", token="", data=None, method=None):
 
 def load_state(path):
     if not os.path.exists(path):
-        return {"rooms": {}}
+        return {"rooms": {}, "invoked": {}}
     with open(path, "r", encoding="utf-8") as f:
         data = json.load(f)
     if not isinstance(data.get("rooms"), dict):
         data["rooms"] = {}
+    if not isinstance(data.get("invoked"), dict):
+        data["invoked"] = {}
     return data
 
 
@@ -128,6 +140,133 @@ def try_ping_presence(api, room, agent, state="watching"):
     return True
 
 
+def _mention_pattern(name):
+    pat = MENTION_RE_CACHE.get(name)
+    if pat is None:
+        escaped = re.escape(name.lower())
+        pat = re.compile(r"@" + escaped + r"\b|^\s*" + escaped + r"\s*[:—-]")
+        MENTION_RE_CACHE[name] = pat
+    return pat
+
+
+def mentions_seat(content, seat, aliases=None):
+    """True if a message addresses `seat`: `@seat` anywhere, or `seat:`/`seat -`/
+    `seat —` at the start of the message. Also checks any configured aliases
+    (e.g. "claude" for a seat named "claude-code")."""
+    text = (content or "").lower()
+    for name in [seat] + list(aliases or []):
+        if not name:
+            continue
+        if _mention_pattern(name).search(text):
+            return True
+    return False
+
+
+class Invoker:
+    """Fires a reasoning step for an addressed seat. Never posts to Majlis
+    itself — that stays majlis.py's `say`, the only post path. The invoker's
+    job ends at kicking off whatever will eventually call `say`."""
+
+    def invoke(self, room, seat, message, transcript):
+        raise NotImplementedError
+
+
+class ManualNotifyInvoker(Invoker):
+    """Default, safe driver: just alerts/logs. Nothing about how the seat
+    actually responds changes unless a real driver is configured."""
+
+    def invoke(self, room, seat, message, transcript):
+        print(
+            f"-- @{seat} addressed in '{room}' (seq {message.get('seq')}): "
+            f"invoke {seat} to read and respond once.",
+            flush=True,
+        )
+        return True
+
+
+class CommandInvoker(Invoker):
+    """Runs a configurable local shell command as the invocation hook. The
+    room, seat, and addressed seq are passed both as env vars and as
+    appended (shell-escaped) args; the fresh transcript is piped on stdin.
+
+    This is the seam for driving a real reasoning step — e.g. desktop
+    automation that brings a seat's app forward and prompts it, or any
+    other local mechanism the user wires up. It does not itself make a
+    desktop app reason; it only runs whatever command the user configured.
+    """
+
+    def __init__(self, command, timeout=120):
+        self.command = command
+        self.timeout = timeout
+
+    def invoke(self, room, seat, message, transcript):
+        env = os.environ.copy()
+        env["MAJLIS_INVOKE_ROOM"] = room
+        env["MAJLIS_INVOKE_SEAT"] = seat
+        env["MAJLIS_INVOKE_SEQ"] = str(message.get("seq", ""))
+        full_cmd = self.command + " " + " ".join(
+            shlex.quote(x) for x in (room, seat, str(message.get("seq", "")))
+        )
+        try:
+            proc = subprocess.run(
+                full_cmd,
+                shell=True,
+                input=transcript,
+                text=True,
+                env=env,
+                timeout=self.timeout,
+                capture_output=True,
+            )
+        except Exception as exc:
+            print(f"-- invoke command failed for @{seat} in '{room}': {exc}", file=sys.stderr, flush=True)
+            return False
+        if proc.stdout:
+            print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
+        if proc.stderr:
+            print(proc.stderr, end="" if proc.stderr.endswith("\n") else "\n", file=sys.stderr)
+        if proc.returncode != 0:
+            print(
+                f"-- invoke command exited {proc.returncode} for @{seat} in '{room}'",
+                file=sys.stderr,
+                flush=True,
+            )
+            return False
+        return True
+
+
+def build_invoker(driver, command):
+    if driver == "command":
+        if not command:
+            sys.exit("--invoke-driver command requires --invoke-cmd (or MAJLIS_INVOKE_CMD)")
+        return CommandInvoker(command)
+    return ManualNotifyInvoker()
+
+
+def fetch_transcript(api, room):
+    messages = api(f"/api/rooms/{urllib.parse.quote(room, safe='')}/messages?since=0")
+    lines = [format_message(m) for m in messages]
+    return "\n".join(lines) + ("\n" if lines else "")
+
+
+def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api):
+    """For each newly-seen message that addresses `owned_seat`, fire the
+    invoker at most once (persisted in invoked_state[room] by seq, so a
+    restart never re-fires a turn already handled). Never fires on the
+    owned seat's own messages."""
+    for room, msg in found:
+        if msg.get("agent") == agent:
+            continue
+        if not mentions_seat(msg.get("content", ""), owned_seat, aliases):
+            continue
+        seq = int(msg.get("seq", 0))
+        last_invoked = int(invoked_state.get(room, 0))
+        if seq <= last_invoked:
+            continue
+        transcript = fetch_transcript(api, room)
+        invoker.invoke(room, owned_seat, msg, transcript)
+        invoked_state[room] = max(last_invoked, seq)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--room", action="append", help="Room to watch. Repeat for multiple rooms.")
@@ -137,6 +276,31 @@ def main():
     parser.add_argument("--include-system", action="store_true", help="Also report system messages.")
     parser.add_argument("--bell", action="store_true", help="Ring the terminal bell when attention is needed.")
     parser.add_argument("--state", default=DEFAULT_STATE, help="Path to local last-seen state JSON.")
+    parser.add_argument(
+        "--owned-seat",
+        default=os.environ.get("MAJLIS_OWNED_SEAT", ""),
+        help="Seat this watcher instance owns for @seat routing (default: MAJLIS_AGENT).",
+    )
+    parser.add_argument(
+        "--seat-alias",
+        action="append",
+        default=None,
+        help="Extra name that also addresses the owned seat (repeatable). "
+        "Defaults to comma-separated MAJLIS_SEAT_ALIASES if set.",
+    )
+    parser.add_argument(
+        "--invoke-driver",
+        choices=["manual", "command"],
+        default=os.environ.get("MAJLIS_INVOKE_DRIVER", "manual"),
+        help="How to fire the invocation hook when the owned seat is addressed. "
+        "'manual' (default) just logs; 'command' runs --invoke-cmd.",
+    )
+    parser.add_argument(
+        "--invoke-cmd",
+        default=os.environ.get("MAJLIS_INVOKE_CMD", ""),
+        help="Shell command to run for --invoke-driver command. Receives room/seat/seq "
+        "as env vars (MAJLIS_INVOKE_ROOM/SEAT/SEQ) and appended args, transcript on stdin.",
+    )
     args = parser.parse_args()
 
     load_dotenv(os.path.join(ROOT, ".env"))
@@ -148,6 +312,13 @@ def main():
     if not key and not token:
         sys.exit("Set MAJLIS_KEY or MAJLIS_TOKEN in .env or the environment.")
 
+    owned_seat = args.owned_seat or agent
+    aliases = args.seat_alias
+    if aliases is None:
+        env_aliases = os.environ.get("MAJLIS_SEAT_ALIASES", "")
+        aliases = [a.strip() for a in env_aliases.split(",") if a.strip()]
+    invoker = build_invoker(args.invoke_driver, args.invoke_cmd)
+
     def api(path, data=None, method=None):
         return request_json(url, path, key=key, token=token, data=data, method=method)
 
@@ -155,7 +326,11 @@ def main():
     state["url"] = url
     state["agent"] = agent
 
-    print(f"watching {url} as {agent}; state={args.state}", file=sys.stderr)
+    print(
+        f"watching {url} as {agent}; owned seat={owned_seat}; "
+        f"invoke-driver={args.invoke_driver}; state={args.state}",
+        file=sys.stderr,
+    )
     try:
         while True:
             rooms = room_names(api, args.room)
@@ -169,6 +344,7 @@ def main():
                 replay=args.replay,
                 include_system=args.include_system,
             )
+            route_addressed(found, owned_seat, aliases, agent, state["invoked"], invoker, api)
             save_state(args.state, state)
 
             for room, msg in found:
