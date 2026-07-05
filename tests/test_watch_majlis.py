@@ -78,6 +78,16 @@ class RouteAddressedTests(unittest.TestCase):
         watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, self.api)
         invoker.invoke.assert_not_called()
 
+    def test_invoke_on_all_fires_on_unaddressed_messages(self):
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        found = [("Test", {"seq": 13, "agent": "gemini", "kind": "chat", "content": "no mention here"})]
+        invoked_state = {}
+        watch_majlis.route_addressed(
+            found, "codex", [], "codex", invoked_state, invoker, self.api, invoke_on="all"
+        )
+        invoker.invoke.assert_called_once()
+        self.assertEqual(invoked_state["Test"], 13)
+
     def test_idempotent_across_simulated_restart(self):
         msg = {"seq": 20, "agent": "farajaay", "kind": "chat", "content": "@codex go"}
         found = [("Test", msg)]
