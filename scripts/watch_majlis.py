@@ -101,6 +101,43 @@ def format_message(msg):
     return f"[{msg['seq']:>4}] {ts} <{msg['agent']}> ({msg['kind']}) {content}"
 
 
+class InvocationResult:
+    """Wraps an Invoker's outcome with enough detail to record a useful
+    claim: whether it succeeded, the reply's seq if known, an error message,
+    and whether a failure was a timeout (recorded `stale`, not `failed`)."""
+
+    def __init__(self, ok, posted_seq=None, last_error="", stale=False):
+        self.ok = bool(ok)
+        self.posted_seq = posted_seq
+        self.last_error = last_error or ""
+        self.stale = bool(stale)
+
+    def __bool__(self):
+        return self.ok
+
+
+def normalize_invocation_result(result):
+    if isinstance(result, InvocationResult):
+        return result
+    if isinstance(result, dict):
+        return InvocationResult(
+            result.get("ok", False),
+            posted_seq=result.get("posted_seq"),
+            last_error=result.get("last_error", ""),
+            stale=result.get("stale", False),
+        )
+    return InvocationResult(bool(result))
+
+
+def parse_posted_seq(text):
+    if not text:
+        return None
+    matches = re.findall(r"\b(?:posted|sent)\b[^\n\r]*\bseq\s+(\d+)\b", text, flags=re.IGNORECASE)
+    if not matches:
+        return None
+    return int(matches[-1])
+
+
 def poll_once(api, rooms, state, agent, replay=False, include_system=False):
     found = []
     for room in rooms:
@@ -204,7 +241,7 @@ class ManualNotifyInvoker(Invoker):
             f"invoke {seat} to read and respond once.",
             flush=True,
         )
-        return True
+        return InvocationResult(True)
 
 
 class CommandInvoker(Invoker):
@@ -242,9 +279,13 @@ class CommandInvoker(Invoker):
                 timeout=self.timeout,
                 capture_output=True,
             )
+        except subprocess.TimeoutExpired as exc:
+            msg = f"invoke command timed out after {self.timeout}s"
+            print(f"-- {msg} for @{seat} in '{room}': {exc}", file=sys.stderr, flush=True)
+            return InvocationResult(False, last_error=msg, stale=True)
         except Exception as exc:
             print(f"-- invoke command failed for @{seat} in '{room}': {exc}", file=sys.stderr, flush=True)
-            return False
+            return InvocationResult(False, last_error=str(exc))
         if proc.stdout:
             print(proc.stdout, end="" if proc.stdout.endswith("\n") else "\n")
         if proc.stderr:
@@ -255,8 +296,9 @@ class CommandInvoker(Invoker):
                 file=sys.stderr,
                 flush=True,
             )
-            return False
-        return True
+            detail = (proc.stderr or proc.stdout or f"exit {proc.returncode}").strip()
+            return InvocationResult(False, last_error=detail[:1000])
+        return InvocationResult(True, posted_seq=parse_posted_seq(proc.stdout or ""))
 
 
 def build_invoker(driver, command):
@@ -274,11 +316,15 @@ def fetch_transcript(api, room):
 
 
 # Per-(room, seat, trigger_seq) work claims: operational metadata, stored
-# beside presence (not transcript history), so two independent processes
-# invoking the same seat (e.g. a live scheduled session and a separate
-# watch_majlis.py-driven headless transport) don't both fire on the same
-# turn. See docs/INVOKE.md.
-CLAIM_ACTIVE_STATUSES = {"claimed", "working", "verifying", "reporting"}
+# server-side beside presence (not transcript history) via
+# /api/rooms/<room>/claims, so two independent processes invoking the same
+# seat — e.g. a live scheduled session and a separate watch_majlis.py
+# process, each with its own local --state file — agree on who's already
+# handling a turn instead of both firing. See docs/INVOKE.md.
+ACTIVE_CLAIM_STATUSES = {"claimed", "working"}
+UNRESOLVED_CLAIM_STATUSES = {"claimed", "working", "failed", "stale"}
+# Resolved for good: never retried, unlike failed/stale which retry_failed_invocations reclaims.
+TERMINAL_CLAIM_STATUSES = {"posted", "superseded"}
 DEFAULT_CLAIM_TTL = 300  # seconds before an unfinished claim is no longer treated as active
 
 
@@ -296,6 +342,24 @@ def upsert_claim(api, room, seat, trigger_seq, status, **fields):
     return api(path, data=payload, method="POST")
 
 
+def try_get_claims(api, room, seat=None):
+    """None means the claims endpoint isn't available (older deployment) —
+    callers must proceed without the guard, same spirit as
+    try_ping_presence. An empty list means claims ARE supported and there
+    just aren't any yet."""
+    try:
+        return get_claims(api, room, seat)
+    except Exception:
+        return None
+
+
+def try_upsert_claim(api, room, seat, trigger_seq, status, **fields):
+    try:
+        upsert_claim(api, room, seat, trigger_seq, status, **fields)
+    except Exception:
+        pass
+
+
 def find_claim(claims, seat, trigger_seq):
     for claim in claims:
         if claim.get("seat") == seat and int(claim.get("trigger_seq", -1)) == int(trigger_seq):
@@ -304,11 +368,10 @@ def find_claim(claims, seat, trigger_seq):
 
 
 def claim_is_active(claim, now=None):
-    """True if `claim` represents in-progress work that should block a
-    second invocation for the same (room, seat, trigger_seq): a non-terminal
-    status whose lease (expires_at) hasn't passed. No expires_at means the
-    claim doesn't expire on its own."""
-    if not claim or claim.get("status") not in CLAIM_ACTIVE_STATUSES:
+    """True if `claim` represents in-progress work: a status in
+    ACTIVE_CLAIM_STATUSES whose lease (expires_at) hasn't passed. No
+    expires_at means the claim doesn't expire on its own."""
+    if not claim or claim.get("status") not in ACTIVE_CLAIM_STATUSES:
         return False
     expires_at = claim.get("expires_at")
     if expires_at is None:
@@ -316,30 +379,67 @@ def claim_is_active(claim, now=None):
     return float(expires_at) > (time.time() if now is None else now)
 
 
-def claim_and_invoke(room, owned_seat, msg, seq, invoker, api, use_claims, claim_ttl):
-    """Runs the claim-guard + invoke + claim-resolution sequence shared by
-    route_addressed and retry_failed_invocations. Returns None if a live
-    claim already owns this turn (skip, neither success nor failure), else
-    the invoker's bool result."""
-    if use_claims:
-        existing = find_claim(get_claims(api, room, owned_seat), owned_seat, seq)
-        if claim_is_active(existing):
+def claim_blocks_invocation(claim, now=None):
+    """True if `claim` means this exact (room, seat, trigger_seq) should not
+    be (re-)invoked: either another process is actively working it (active
+    and unexpired), or it was already resolved for good (`posted` /
+    `superseded`) — unlike `failed`/`stale`, those are never retried."""
+    if not claim:
+        return False
+    if claim.get("status") in TERMINAL_CLAIM_STATUSES:
+        return True
+    return claim_is_active(claim, now=now)
+
+
+def supersede_older_claims(api, room, seat, trigger_seq, claims):
+    """A newer addressed turn makes answering an older, still-unresolved
+    turn for this seat moot — mark those superseded rather than leaving
+    them to look perpetually claimed/failed."""
+    for claim in claims:
+        try:
+            other_seq = int(claim.get("trigger_seq", -1))
+        except (TypeError, ValueError):
+            continue
+        if other_seq < trigger_seq and claim.get("status") in UNRESOLVED_CLAIM_STATUSES:
+            try_upsert_claim(api, room, seat, other_seq, "superseded")
+
+
+def claim_and_invoke(room, owned_seat, msg, seq, invoker, api, claim_ttl=DEFAULT_CLAIM_TTL):
+    """Claims (room, owned_seat, seq) via the shared claims API before
+    invoking, so a second process invoking the same seat — with its own,
+    separate polling state — skips a turn this one already owns. Returns
+    None if another process's claim is still active (skip, neither success
+    nor failure), else the invoker's InvocationResult. Falls back to
+    invoking unconditionally if the claims endpoint isn't available."""
+    now = time.time()
+    claims = try_get_claims(api, room, owned_seat)
+    if claims is not None:
+        if claim_blocks_invocation(find_claim(claims, owned_seat, seq), now=now):
             return None
-        upsert_claim(api, room, owned_seat, seq, "claimed", expires_at=time.time() + claim_ttl)
+        supersede_older_claims(api, room, owned_seat, seq, claims)
+        try_upsert_claim(api, room, owned_seat, seq, "claimed", expires_at=now + claim_ttl)
+        try_upsert_claim(api, room, owned_seat, seq, "working")
     transcript = fetch_transcript(api, room)
-    success = invoker.invoke(room, owned_seat, msg, transcript)
-    if use_claims:
-        upsert_claim(api, room, owned_seat, seq, "idle" if success else "failed")
-    return success
+    result = normalize_invocation_result(invoker.invoke(room, owned_seat, msg, transcript))
+    if claims is not None:
+        if result:
+            try_upsert_claim(api, room, owned_seat, seq, "posted", posted_seq=result.posted_seq)
+        else:
+            try_upsert_claim(
+                api, room, owned_seat, seq,
+                "stale" if result.stale else "failed",
+                last_error=result.last_error,
+            )
+    return result
 
 
 def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, api,
-                     invoke_on="addressed", use_claims=False, claim_ttl=DEFAULT_CLAIM_TTL):
+                     invoke_on="addressed", claim_ttl=DEFAULT_CLAIM_TTL):
     """For each newly-seen message that addresses `owned_seat`, fire the
     invoker at most once (persisted in invoked_state[room] by seq, so a
     restart never re-fires a turn already handled). Never fires on the
-    owned seat's own messages. When use_claims is set, also skips a turn
-    another process already has an active claim on."""
+    owned seat's own messages. Also skips a turn another process already
+    has an active claim on — see claim_and_invoke."""
     failed = []
     for room, msg in found:
         if msg.get("agent") == agent:
@@ -350,7 +450,7 @@ def route_addressed(found, owned_seat, aliases, agent, invoked_state, invoker, a
         last_invoked = int(invoked_state.get(room, 0))
         if seq <= last_invoked:
             continue
-        result = claim_and_invoke(room, owned_seat, msg, seq, invoker, api, use_claims, claim_ttl)
+        result = claim_and_invoke(room, owned_seat, msg, seq, invoker, api, claim_ttl)
         if result is None:
             continue
         if result:
@@ -411,8 +511,7 @@ def prune_handled_failed_invocations(state):
             pending.pop(room, None)
 
 
-def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api,
-                              use_claims=False, claim_ttl=DEFAULT_CLAIM_TTL):
+def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api, claim_ttl=DEFAULT_CLAIM_TTL):
     prune_handled_failed_invocations(state)
     failed_again = []
     for room, seq in due_failed_invocations(state, rooms):
@@ -424,7 +523,7 @@ def retry_failed_invocations(state, rooms, owned_seat, agent, invoker, api,
         if not msg or msg.get("agent") == agent:
             clear_failed_invocation(state, room, seq)
             continue
-        result = claim_and_invoke(room, owned_seat, msg, seq, invoker, api, use_claims, claim_ttl)
+        result = claim_and_invoke(room, owned_seat, msg, seq, invoker, api, claim_ttl)
         if result is None:
             continue
         if result:
@@ -479,17 +578,9 @@ def main():
         help="'addressed' invokes only @seat/prefix turns; 'all' invokes on every new non-self turn.",
     )
     parser.add_argument(
-        "--use-claims",
-        action="store_true",
-        default=os.environ.get("MAJLIS_USE_CLAIMS", "").lower() in ("1", "true", "yes"),
-        help="Check/record a (room, seat, trigger_seq) claim via /api/rooms/<room>/claims "
-        "before invoking, so a second process invoking the same seat skips a turn "
-        "already claimed. Off by default.",
-    )
-    parser.add_argument(
-        "--claim-ttl",
+        "--invoke-ttl",
         type=float,
-        default=float(os.environ.get("MAJLIS_CLAIM_TTL", DEFAULT_CLAIM_TTL)),
+        default=float(os.environ.get("MAJLIS_INVOKE_TTL", str(DEFAULT_CLAIM_TTL))),
         help=f"Seconds before an unfinished claim is no longer treated as active (default {DEFAULT_CLAIM_TTL}).",
     )
     args = parser.parse_args()
@@ -520,7 +611,7 @@ def main():
     print(
         f"watching {url} as {agent}; owned seat={owned_seat}; "
         f"invoke-driver={args.invoke_driver}; invoke-on={args.invoke_on}; "
-        f"use-claims={args.use_claims}; state={args.state}",
+        f"invoke-ttl={args.invoke_ttl}; state={args.state}",
         file=sys.stderr,
     )
     try:
@@ -545,13 +636,12 @@ def main():
                 invoker,
                 api,
                 invoke_on=args.invoke_on,
-                use_claims=args.use_claims,
-                claim_ttl=args.claim_ttl,
+                claim_ttl=args.invoke_ttl,
             )
             remember_failed_invocations(state, failed_invocations)
             retry_failed_invocations(
                 state, rooms, owned_seat, agent, invoker, api,
-                use_claims=args.use_claims, claim_ttl=args.claim_ttl,
+                claim_ttl=args.invoke_ttl,
             )
             prune_handled_failed_invocations(state)
             save_state(args.state, state)

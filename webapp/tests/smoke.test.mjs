@@ -31,7 +31,9 @@ async function sleep(ms) {
 
 async function run() {
   console.log('Starting Next.js server...');
-  const server = spawn('npm', ['start'], {
+  const npmCommand = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';
+  const npmArgs = process.platform === 'win32' ? ['/d', '/s', '/c', 'npm start'] : ['start'];
+  const server = spawn(npmCommand, npmArgs, {
     env: {
       ...process.env,
       MONGODB_URI: process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/majlis-ci',

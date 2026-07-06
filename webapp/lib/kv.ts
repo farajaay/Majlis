@@ -26,28 +26,9 @@ export type Presence = {
 };
 type Counter = { _id: string; seq: number };
 
-export type ClaimStatus =
-  | "idle"
-  | "claimed"
-  | "working"
-  | "verifying"
-  | "reporting"
-  | "blocked"
-  | "stale"
-  | "failed"
-  | "superseded";
+export type ClaimStatus = "claimed" | "working" | "posted" | "failed" | "stale" | "superseded";
 
-const CLAIM_STATUSES: ClaimStatus[] = [
-  "idle",
-  "claimed",
-  "working",
-  "verifying",
-  "reporting",
-  "blocked",
-  "stale",
-  "failed",
-  "superseded",
-];
+const CLAIM_STATUSES: ClaimStatus[] = ["claimed", "working", "posted", "failed", "stale", "superseded"];
 
 export type Claim = {
   room: string;

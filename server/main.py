@@ -85,10 +85,7 @@ def _write_presence(room: str, presence: dict[str, dict]):
     f.write_text(json.dumps(presence, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-CLAIM_STATUSES = {
-    "idle", "claimed", "working", "verifying", "reporting",
-    "blocked", "stale", "failed", "superseded",
-}
+CLAIM_STATUSES = {"claimed", "working", "posted", "failed", "stale", "superseded"}
 
 
 class ClaimIn(BaseModel):

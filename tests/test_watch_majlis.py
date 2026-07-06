@@ -54,6 +54,9 @@ class MentionsSeatTests(unittest.TestCase):
 
 class RouteAddressedTests(unittest.TestCase):
     def setUp(self):
+        # Any path (including /claims) returns []: claims are supported but
+        # empty, so the guard never blocks these tests unless they set up
+        # their own api function to say otherwise.
         self.api = mock.Mock(return_value=[])
 
     def test_fires_on_addressed_turn(self):
@@ -133,20 +136,10 @@ class RouteAddressedTests(unittest.TestCase):
             state["rooms"][room] = min(int(state["rooms"].get(room, seq)), seq - 1)
         self.assertEqual(state["rooms"]["Test"], 31)
 
-    def test_use_claims_false_never_touches_claims_api(self):
-        found = [("Test", {"seq": 50, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
-        invoker = mock.Mock(spec=watch_majlis.Invoker)
-        invoker.invoke.return_value = True
-        calls = []
-
-        def api(path, data=None, method=None):
-            calls.append(path)
-            return []
-
-        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
-        self.assertFalse(any("/claims" in p for p in calls))
-
-    def test_use_claims_skips_invocation_when_claim_active(self):
+    def test_active_claim_from_another_process_blocks_invocation(self):
+        """The actual cross-process case: a second watch_majlis.py instance,
+        its own invoked_state empty, must not invoke when another process's
+        claim on this exact turn is still active."""
         found = [("Test", {"seq": 51, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
         invoker = mock.Mock(spec=watch_majlis.Invoker)
 
@@ -158,14 +151,12 @@ class RouteAddressedTests(unittest.TestCase):
             return []
 
         invoked_state = {}
-        failed = watch_majlis.route_addressed(
-            found, "codex", [], "codex", invoked_state, invoker, api, use_claims=True
-        )
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api)
         invoker.invoke.assert_not_called()
         self.assertEqual(invoked_state, {})
         self.assertEqual(failed, [])
 
-    def test_use_claims_ignores_expired_claim_and_invokes(self):
+    def test_expired_claim_does_not_block_invocation(self):
         found = [("Test", {"seq": 52, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
         invoker = mock.Mock(spec=watch_majlis.Invoker)
         invoker.invoke.return_value = True
@@ -179,12 +170,87 @@ class RouteAddressedTests(unittest.TestCase):
             return []
 
         invoked_state = {}
-        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api, use_claims=True)
+        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api)
         invoker.invoke.assert_called_once()
         self.assertEqual(invoked_state["Test"], 52)
 
-    def test_use_claims_records_claimed_then_idle_on_success(self):
+    def test_already_posted_claim_blocks_a_fresh_watchers_reinvocation(self):
+        """Caught via live testing, not just reasoning: a brand-new watcher
+        process (empty invoked_state, e.g. a replay or a lost state file)
+        must not re-answer a turn another process already posted a reply
+        for — 'posted' isn't 'active', but it must still block."""
+        found = [("Test", {"seq": 56, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                self.assertIsNone(method)  # only a GET should happen before the skip
+                return [{"seat": "codex", "trigger_seq": 56, "status": "posted", "expires_at": None}]
+            return []
+
+        invoked_state = {}  # fresh process — nothing local says this was ever handled
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api)
+        invoker.invoke.assert_not_called()
+        self.assertEqual(invoked_state, {})
+        self.assertEqual(failed, [])
+
+    def test_claim_lifecycle_on_success_is_claimed_working_posted(self):
         found = [("Test", {"seq": 53, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(True, posted_seq=321)
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                if method == "POST":
+                    posts.append(dict(data))
+                    return dict(data)
+                return []
+            return []
+
+        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
+        self.assertEqual([p["status"] for p in posts], ["claimed", "working", "posted"])
+        self.assertIn("expires_at", posts[0])
+        self.assertEqual(posts[-1]["posted_seq"], 321)
+
+    def test_claim_lifecycle_records_failed_status_on_invoke_failure(self):
+        found = [("Test", {"seq": 54, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(False, last_error="boom")
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                if method == "POST":
+                    posts.append(dict(data))
+                    return dict(data)
+                return []
+            return []
+
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
+        self.assertEqual([p["status"] for p in posts], ["claimed", "working", "failed"])
+        self.assertEqual(posts[-1]["last_error"], "boom")
+        self.assertEqual(failed, [("Test", 54)])
+
+    def test_claim_lifecycle_records_stale_on_timeout(self):
+        found = [("Test", {"seq": 55, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(False, last_error="timed out", stale=True)
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path:
+                if method == "POST":
+                    posts.append(dict(data))
+                    return dict(data)
+                return []
+            return []
+
+        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
+        self.assertEqual(posts[-1]["status"], "stale")
+
+    def test_newer_claim_supersedes_older_unresolved_claim(self):
+        found = [("Test", {"seq": 60, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
         invoker = mock.Mock(spec=watch_majlis.Invoker)
         invoker.invoke.return_value = True
         posts = []
@@ -194,30 +260,31 @@ class RouteAddressedTests(unittest.TestCase):
                 if method == "POST":
                     posts.append(dict(data))
                     return dict(data)
-                return []
+                # this seat has an older, never-resolved claim
+                return [{"seat": "codex", "trigger_seq": 58, "status": "failed"}]
             return []
 
-        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api, use_claims=True)
-        self.assertEqual([p["status"] for p in posts], ["claimed", "idle"])
-        self.assertIn("expires_at", posts[0])
+        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
+        superseded = [p for p in posts if p["trigger_seq"] == 58]
+        self.assertEqual(len(superseded), 1)
+        self.assertEqual(superseded[0]["status"], "superseded")
 
-    def test_use_claims_records_failed_status_on_invoke_failure(self):
-        found = [("Test", {"seq": 54, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+    def test_claims_endpoint_unavailable_falls_back_to_invoking(self):
+        """Older deployments without /claims must not block invocation —
+        same resilience contract as try_ping_presence."""
+        found = [("Test", {"seq": 61, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
         invoker = mock.Mock(spec=watch_majlis.Invoker)
-        invoker.invoke.return_value = False
-        posts = []
+        invoker.invoke.return_value = True
 
         def api(path, data=None, method=None):
             if "/claims" in path:
-                if method == "POST":
-                    posts.append(dict(data))
-                    return dict(data)
-                return []
+                raise RuntimeError("404")
             return []
 
-        failed = watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api, use_claims=True)
-        self.assertEqual([p["status"] for p in posts], ["claimed", "failed"])
-        self.assertEqual(failed, [("Test", 54)])
+        invoked_state = {}
+        watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api)
+        invoker.invoke.assert_called_once()
+        self.assertEqual(invoked_state["Test"], 61)
 
 
 class ClaimHelperTests(unittest.TestCase):
@@ -238,8 +305,30 @@ class ClaimHelperTests(unittest.TestCase):
         self.assertFalse(watch_majlis.claim_is_active(claim))
 
     def test_claim_is_active_false_for_terminal_status(self):
-        claim = {"status": "idle", "expires_at": time.time() + 100}
+        claim = {"status": "posted", "expires_at": time.time() + 100}
         self.assertFalse(watch_majlis.claim_is_active(claim))
+
+    def test_claim_blocks_invocation_true_for_active_claim(self):
+        claim = {"status": "working", "expires_at": time.time() + 100}
+        self.assertTrue(watch_majlis.claim_blocks_invocation(claim))
+
+    def test_claim_blocks_invocation_true_for_posted_even_though_not_active(self):
+        """A posted claim isn't 'active' (claim_is_active is False), but it
+        must still block re-invocation forever — it's resolved, not retryable."""
+        claim = {"status": "posted", "expires_at": None}
+        self.assertFalse(watch_majlis.claim_is_active(claim))
+        self.assertTrue(watch_majlis.claim_blocks_invocation(claim))
+
+    def test_claim_blocks_invocation_true_for_superseded(self):
+        claim = {"status": "superseded"}
+        self.assertTrue(watch_majlis.claim_blocks_invocation(claim))
+
+    def test_claim_blocks_invocation_false_for_failed_or_stale(self):
+        self.assertFalse(watch_majlis.claim_blocks_invocation({"status": "failed"}))
+        self.assertFalse(watch_majlis.claim_blocks_invocation({"status": "stale"}))
+
+    def test_claim_blocks_invocation_false_for_missing_claim(self):
+        self.assertFalse(watch_majlis.claim_blocks_invocation(None))
 
     def test_claim_is_active_true_without_expiry(self):
         claim = {"status": "claimed", "expires_at": None}
@@ -261,7 +350,7 @@ class RetryFailedInvocationsClaimTests(unittest.TestCase):
 
         invoker = mock.Mock(spec=watch_majlis.Invoker)
         state = {"invoked": {}, "failed_invocations": {"Test": {"9": {"seq": 9, "next_retry": 0}}}}
-        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api, use_claims=True)
+        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api)
         invoker.invoke.assert_not_called()
 
     def test_retry_invokes_and_claims_when_no_active_claim(self):
@@ -280,19 +369,20 @@ class RetryFailedInvocationsClaimTests(unittest.TestCase):
         invoker = mock.Mock(spec=watch_majlis.Invoker)
         invoker.invoke.return_value = True
         state = {"invoked": {}, "failed_invocations": {"Test": {"9": {"seq": 9, "next_retry": 0}}}}
-        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api, use_claims=True)
+        watch_majlis.retry_failed_invocations(state, ["Test"], "codex", "codex", invoker, api)
         invoker.invoke.assert_called_once()
-        self.assertEqual([p["status"] for p in posts], ["claimed", "idle"])
+        self.assertEqual([p["status"] for p in posts], ["claimed", "working", "posted"])
         self.assertEqual(state["invoked"]["Test"], 9)
 
 
 class CommandInvokerTests(unittest.TestCase):
     def test_runs_command_with_transcript_on_stdin_and_env(self):
-        fake_result = mock.Mock(returncode=0, stdout="", stderr="")
+        fake_result = mock.Mock(returncode=0, stdout="posted codex reply seq 42\n", stderr="")
         with mock.patch.object(watch_majlis.subprocess, "run", return_value=fake_result) as run_mock:
             invoker = watch_majlis.CommandInvoker("echo hi")
             ok = invoker.invoke("Test", "codex", {"seq": 5}, "transcript text\n")
         self.assertTrue(ok)
+        self.assertEqual(ok.posted_seq, 42)
         run_mock.assert_called_once()
         _, kwargs = run_mock.call_args
         self.assertEqual(kwargs["input"], "transcript text\n")
@@ -306,6 +396,17 @@ class CommandInvokerTests(unittest.TestCase):
             invoker = watch_majlis.CommandInvoker("false")
             ok = invoker.invoke("Test", "codex", {"seq": 6}, "t")
         self.assertFalse(ok)
+        self.assertEqual(ok.last_error, "boom")
+
+    def test_marks_timeout_as_stale(self):
+        with mock.patch.object(
+            watch_majlis.subprocess, "run",
+            side_effect=watch_majlis.subprocess.TimeoutExpired(cmd="slow", timeout=1),
+        ):
+            invoker = watch_majlis.CommandInvoker("slow", timeout=1)
+            ok = invoker.invoke("Test", "codex", {"seq": 7}, "t")
+        self.assertFalse(ok)
+        self.assertTrue(ok.stale)
 
     def test_fires_once_per_addressed_turn_not_on_own_posts(self):
         fake_result = mock.Mock(returncode=0, stdout="", stderr="")
