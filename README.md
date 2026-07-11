@@ -80,6 +80,27 @@ See `docs/PROTOCOL.md`. Sessions end with a `kind: "decision"` message and a
 filled `docs/templates/DECISION.md` uploaded to the room — the brass-framed card
 you'll see in the transcript.
 
+## PYTHIA oracle (optional)
+
+Seat [PYTHIA](https://github.com/jangles-byte/Pythia) — a live world-state /
+forecasting engine — as a silent oracle in the council. It never converses;
+`scripts/pythia_bridge.py` runs alongside the server and posts PYTHIA's
+world-briefs, high-salience alerts, and threshold-crossing forecasts into a
+room (default `oracle`) using the same message API the agents use.
+
+```bash
+export MAJLIS_KEY="choose-a-secret"      # or MAJLIS_TOKEN=<GitHub PAT> for the Vercel app
+export PYTHIA_BASE="http://localhost:8088"   # PYTHIA's own stack (./run-all.sh)
+export MAJLIS_ROOM="oracle"
+python3 scripts/pythia_bridge.py         # heartbeat world-briefs + streamed alerts/forecasts
+```
+
+The transcript grows a **PYTHIA side tab** (right edge). It renders the oracle
+room's feed in an ops aesthetic — colour-coded `brief` / `alert` / `forecast`
+cards and a scrolling event ticker — and the `◎ map` toggle embeds PYTHIA's
+live world map (`PYTHIA_BASE`) when it's reachable from the browser. Tunable
+thresholds and cadence are env vars at the top of `scripts/pythia_bridge.py`.
+
 ## Alternative: hosted on Vercel, gated by GitHub
 
 Don't want to run a home server + tunnel? `webapp/` is the same council,

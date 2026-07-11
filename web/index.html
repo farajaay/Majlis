@@ -55,6 +55,82 @@
     .turn{animation:rise .25s ease-out}
     @keyframes rise{from{opacity:0;transform:translateY(4px)}to{opacity:1}}
   }
+
+  /* ---- PYTHIA oracle side tab ---- */
+  :root{--py-bg:#080B10;--py-line:#1B2A38;--py-magenta:#E24A9A;
+        --py-cyan:#5AD1E0;--py-ok:#7DD3A0;--py-dim:#6B8496}
+  #pythia-handle{position:fixed;right:0;top:50%;transform:translateY(-50%);z-index:6;
+    display:flex;align-items:center;gap:8px;writing-mode:vertical-rl;
+    background:var(--py-bg);color:var(--py-dim);border:1px solid var(--py-line);
+    border-right:none;border-radius:10px 0 0 10px;padding:16px 7px;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;letter-spacing:3px;
+    cursor:pointer}
+  #pythia-handle:hover,#pythia-handle:focus-visible{border-color:var(--py-magenta);
+    color:var(--py-magenta);outline:none}
+  .py-dot{width:7px;height:7px;border-radius:50%;background:var(--py-dim);flex:none}
+  #pythia.live-ok .py-dot,#pythia-handle .py-dot.on{background:var(--py-ok)}
+  @media (prefers-reduced-motion:no-preference){
+    #pythia.live-ok .py-dot,#pythia-handle .py-dot.on{
+      box-shadow:0 0 0 0 rgba(125,211,160,.6);animation:pypulse 2.2s ease-out infinite}
+    @keyframes pypulse{70%{box-shadow:0 0 0 6px rgba(125,211,160,0)}
+                       100%{box-shadow:0 0 0 0 rgba(125,211,160,0)}}
+  }
+  #pythia{position:fixed;top:0;right:0;height:100vh;width:390px;max-width:90vw;z-index:7;
+    background:var(--py-bg);border-left:1px solid var(--py-line);
+    transform:translateX(101%);transition:transform .22s ease;
+    display:flex;flex-direction:column;
+    font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:#C6D4DE}
+  @media (prefers-reduced-motion:reduce){#pythia{transition:none}}
+  #pythia.open{transform:translateX(0)}
+  #pythia [hidden]{display:none}  /* beat the display:flex on .py-feed/.py-map */
+  .py-head{display:flex;align-items:center;gap:8px;padding:11px 12px;
+    border-bottom:1px solid var(--py-line);background:linear-gradient(180deg,#0C121A,#080B10)}
+  .py-head .py-live{display:flex;align-items:center;gap:7px;letter-spacing:3px;
+    color:#E9EFF3;font-size:12px}
+  .py-head .py-sub{color:var(--py-dim);font-size:10px;letter-spacing:1px}
+  .py-head .py-spacer{flex:1}
+  .py-pill{background:transparent;color:var(--py-dim);border:1px solid var(--py-line);
+    border-radius:6px;padding:4px 8px;font:inherit;font-size:11px;cursor:pointer}
+  .py-pill:hover,.py-pill:focus-visible{border-color:var(--py-cyan);color:var(--py-cyan);
+    outline:none}
+  .py-pill.on{border-color:var(--py-cyan);color:var(--py-cyan)}
+  .py-feed{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
+  .py-card{border:1px solid var(--py-line);border-left-width:3px;border-radius:7px;
+    padding:9px 11px;background:rgba(255,255,255,.015)}
+  .py-card.k-alert{border-left-color:var(--py-magenta)}
+  .py-card.k-forecast{border-left-color:var(--py-cyan)}
+  .py-card.k-brief{border-left-color:var(--py-ok)}
+  .py-card.k-note{border-left-color:var(--py-dim)}
+  .py-cardhead{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+  .py-tag{font-size:9.5px;letter-spacing:2px;padding:2px 6px;border-radius:4px;
+    color:var(--py-bg);background:var(--py-dim);font-weight:700}
+  .k-alert .py-tag{background:var(--py-magenta)}
+  .k-forecast .py-tag{background:var(--py-cyan)}
+  .k-brief .py-tag{background:var(--py-ok)}
+  .py-agent{color:var(--py-dim);font-size:10px}
+  .py-t{margin-left:auto;color:var(--py-dim);font-size:10px}
+  .py-body{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5;color:#D7E2EA}
+  .py-empty{color:var(--py-dim);text-align:center;margin:auto;padding:24px;line-height:1.7}
+  .py-empty small{color:#4E6577}
+  .py-map{flex:1;display:flex;flex-direction:column;min-height:0}
+  .py-mapbar{display:flex;gap:6px;align-items:center;padding:8px 10px;
+    border-bottom:1px solid var(--py-line)}
+  .py-mapbar input{flex:1;background:#0C121A;color:#C6D4DE;border:1px solid var(--py-line);
+    border-radius:6px;padding:5px 8px;font:inherit;font-size:11px}
+  .py-mapbar a{color:var(--py-cyan);text-decoration:none;font-size:11px;white-space:nowrap}
+  .py-map iframe{flex:1;width:100%;border:0;background:#05070A}
+  .py-foot{border-top:1px solid var(--py-line);padding:6px 0;overflow:hidden;
+    white-space:nowrap;color:var(--py-dim);font-size:10.5px;letter-spacing:.5px}
+  .py-foot .py-tick{display:inline-block;padding-left:100%}
+  .py-foot .py-tick .sep{margin:0 10px;color:var(--py-magenta)}
+  @media (prefers-reduced-motion:no-preference){
+    .py-foot .py-tick{animation:pytick 26s linear infinite}
+    @keyframes pytick{to{transform:translateX(-100%)}}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .py-foot{text-overflow:ellipsis}
+    .py-foot .py-tick{padding-left:10px;animation:none}
+  }
 </style>
 </head>
 <body>
@@ -79,6 +155,30 @@
     <button id="send">Send</button>
   </div>
 </div>
+
+<button id="pythia-handle" aria-label="Toggle PYTHIA oracle panel" aria-expanded="false">
+  <span class="py-dot"></span>PYTHIA
+</button>
+<aside id="pythia" aria-label="PYTHIA oracle feed">
+  <div class="py-head">
+    <span class="py-live"><span class="py-dot"></span>PYTHIA</span>
+    <span class="py-sub" id="pythia-status">oracle</span>
+    <span class="py-spacer"></span>
+    <button id="pythia-view" class="py-pill" title="Toggle live world map">◎ map</button>
+    <button id="pythia-close" class="py-pill" title="Close panel">✕</button>
+  </div>
+  <div id="pythia-feed" class="py-feed" aria-live="polite"></div>
+  <div id="pythia-map" class="py-map" hidden>
+    <div class="py-mapbar">
+      <input id="pythia-base" placeholder="http://localhost:8088"
+             aria-label="PYTHIA base URL">
+      <a id="pythia-open" href="#" target="_blank" rel="noopener">open ↗</a>
+    </div>
+    <iframe id="pythia-frame" title="PYTHIA live world map"
+            referrerpolicy="no-referrer"></iframe>
+  </div>
+  <div class="py-foot"><span class="py-tick" id="pythia-tick"></span></div>
+</aside>
 
 <script>
 const $=id=>document.getElementById(id);
@@ -191,6 +291,74 @@ $("newroom").onclick=async()=>{
   await api(`/api/rooms/${n}/messages`,{method:"POST",
     body:JSON.stringify({agent:"system",content:`session '${n}' opened`,kind:"system"})});
   await loadRooms();openRoom(n);};
+
+// ---- PYTHIA oracle side tab ----
+// Watches the room the bridge (scripts/pythia_bridge.py) posts into and renders
+// its brief/alert/forecast turns in PYTHIA's ops aesthetic. The "◎ map" toggle
+// embeds the live PYTHIA dashboard when it's reachable from the browser.
+const PY_ROOM=localStorage.getItem("pythia_room")||"oracle";
+let pyLast=0,pySeen={},pyOpen=false,pyMap=false,pyLoop=false,pyTicks=[];
+$("pythia-base").value=localStorage.getItem("pythia_base")||"http://localhost:8088";
+
+function pyBase(){return ($("pythia-base").value.trim()||"http://localhost:8088").replace(/\/+$/,"")}
+function pyLoadMap(){const b=pyBase();localStorage.setItem("pythia_base",b);
+  $("pythia-open").href=b;if($("pythia-frame").src!==b+"/")$("pythia-frame").src=b;}
+
+function pyToggle(open){
+  pyOpen=open===undefined?!pyOpen:open;
+  $("pythia").classList.toggle("open",pyOpen);
+  $("pythia-handle").setAttribute("aria-expanded",pyOpen?"true":"false");
+  localStorage.setItem("pythia_open",pyOpen?"1":"");
+  if(pyOpen&&!pyLoop){pyLoop=true;pyPoll(true);}}
+
+$("pythia-handle").onclick=()=>pyToggle();
+$("pythia-close").onclick=()=>pyToggle(false);
+$("pythia-view").onclick=()=>{pyMap=!pyMap;
+  $("pythia-map").hidden=!pyMap;$("pythia-feed").hidden=pyMap;
+  $("pythia-view").classList.toggle("on",pyMap);
+  if(pyMap)pyLoadMap();};
+$("pythia-base").onchange=pyLoadMap;
+
+const PY_KINDS={brief:{tag:"WORLD BRIEF",cls:"k-brief"},
+                alert:{tag:"ALERT",cls:"k-alert"},
+                forecast:{tag:"FORECAST",cls:"k-forecast"}};
+function pyMeta(k){return PY_KINDS[k]||{tag:(k||"note").toUpperCase(),cls:"k-note"};}
+
+function pyRender(m){
+  if(pySeen[m.seq])return;pySeen[m.seq]=1;pyLast=Math.max(pyLast,m.seq);
+  $("pythia-feed").querySelector(".py-empty")?.remove();
+  const meta=pyMeta(m.kind);
+  const t=new Date(m.ts*1000).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+  const el=document.createElement("div");el.className="py-card "+meta.cls;
+  el.innerHTML=`<div class="py-cardhead"><span class="py-tag">${esc(meta.tag)}</span>`
+    +`<span class="py-agent">${esc(m.agent)}</span><span class="py-t">${t}</span></div>`
+    +`<div class="py-body">${esc(m.content)}</div>`;
+  const feed=$("pythia-feed");const stick=feed.scrollTop+feed.clientHeight>=feed.scrollHeight-4;
+  feed.appendChild(el);if(stick)feed.scrollTop=feed.scrollHeight;
+  if(m.kind==="alert"||m.kind==="forecast")pyTicks.push(m.content.replace(/\s+/g," ").trim());
+  pyDrawTicker();}
+
+function pyDrawTicker(){
+  const strip=$("pythia-tick");
+  strip.innerHTML=pyTicks.slice(-8).map(s=>`<span>${esc(s)}</span>`).join("<span class='sep'>◦</span>");}
+
+function pySetStatus(ok){
+  $("pythia-status").textContent=PY_ROOM+(ok?" · live":" · offline");
+  $("pythia").classList.toggle("live-ok",ok);
+  document.querySelector("#pythia-handle .py-dot")?.classList.toggle("on",ok);}
+
+async function pyPoll(reset){
+  if(reset){pyLast=0;pySeen={};pyTicks=[];$("pythia-feed").innerHTML="";}
+  try{
+    const msgs=await api(`/api/rooms/${PY_ROOM}/messages?since=${pyLast}`);
+    msgs.forEach(pyRender);pySetStatus(true);
+  }catch(e){pySetStatus(false);}
+  if(!$("pythia-feed").querySelector(".py-card")&&!$("pythia-feed").querySelector(".py-empty"))
+    $("pythia-feed").innerHTML=`<div class="py-empty">awaiting oracle feed…<br>`
+      +`<small>start the bridge:<br>python3 scripts/pythia_bridge.py</small></div>`;
+  setTimeout(pyPoll,5000);}
+
+if(localStorage.getItem("pythia_open"))pyToggle(true);
 
 loadRooms();poll();
 </script>
