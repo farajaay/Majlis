@@ -22,9 +22,18 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: #e1ddd2;
   color: var(--paper);
   font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* base tone lives on <html>; <body> is transparent so the Scroll-World
+   backdrop (fixed, z-index -1) shows through the margins */
+html {
+  background: #e1ddd2;
+}
+
+body {
+  background: transparent;
 }
 
 body {
@@ -189,7 +198,9 @@ textarea:focus-visible {
   min-width: 0;
   min-height: calc(100vh - 170px);
   border: 1px solid var(--line);
-  background: var(--ink);
+  /* translucent so Scroll-World drifts faintly behind the transcript;
+     turns are opaque cards, so text stays fully legible */
+  background: rgba(248, 246, 239, 0.82);
   box-shadow: var(--shadow);
 }
 
@@ -722,6 +733,317 @@ textarea:focus-visible {
 
   .context-rail {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* ---- Scroll-World backdrop ---- */
+.scroll-world {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/* ---- PYTHIA oracle side console (dark widget within the light app) ---- */
+#pythia-handle {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  writing-mode: vertical-rl;
+  min-height: 0;
+  padding: 16px 7px;
+  border: 1px solid #1b2a38;
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+  background: #080b10;
+  color: #6b8496;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 11px;
+  letter-spacing: 3px;
+}
+
+#pythia-handle:hover,
+#pythia-handle:focus-visible {
+  border-color: #e24a9a;
+  color: #e24a9a;
+}
+
+.py-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #6b8496;
+}
+
+#pythia.live-ok .py-dot,
+#pythia-handle.live-ok .py-dot {
+  background: #7dd3a0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  #pythia.live-ok .py-dot,
+  #pythia-handle.live-ok .py-dot {
+    box-shadow: 0 0 0 0 rgba(125, 211, 160, 0.6);
+    animation: pypulse 2.2s ease-out infinite;
+  }
+  @keyframes pypulse {
+    70% {
+      box-shadow: 0 0 0 6px rgba(125, 211, 160, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(125, 211, 160, 0);
+    }
+  }
+}
+
+#pythia {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 45;
+  display: flex;
+  flex-direction: column;
+  width: 390px;
+  max-width: 90vw;
+  height: 100vh;
+  background: #080b10;
+  border-left: 1px solid #1b2a38;
+  color: #c6d4de;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 12px;
+  transform: translateX(101%);
+  transition: transform 0.22s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #pythia {
+    transition: none;
+  }
+}
+
+#pythia.open {
+  transform: translateX(0);
+}
+
+#pythia [hidden] {
+  display: none;
+}
+
+.py-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 12px;
+  border-bottom: 1px solid #1b2a38;
+  background: linear-gradient(180deg, #0c121a, #080b10);
+}
+
+.py-live {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  letter-spacing: 3px;
+  color: #e9eff3;
+  font-size: 12px;
+}
+
+.py-sub {
+  color: #6b8496;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.py-spacer {
+  flex: 1;
+}
+
+.py-pill {
+  min-height: 0;
+  padding: 4px 8px;
+  border: 1px solid #1b2a38;
+  border-radius: 6px;
+  background: transparent;
+  color: #6b8496;
+  font: inherit;
+  font-size: 11px;
+}
+
+.py-pill:hover,
+.py-pill:focus-visible,
+.py-pill.on {
+  border-color: #5ad1e0;
+  color: #5ad1e0;
+}
+
+.py-feed {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.py-card {
+  padding: 9px 11px;
+  border: 1px solid #1b2a38;
+  border-left-width: 3px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.py-card.k-alert {
+  border-left-color: #e24a9a;
+}
+.py-card.k-forecast {
+  border-left-color: #5ad1e0;
+}
+.py-card.k-brief {
+  border-left-color: #7dd3a0;
+}
+.py-card.k-note {
+  border-left-color: #6b8496;
+}
+
+.py-cardhead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.py-tag {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #6b8496;
+  color: #080b10;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 2px;
+}
+
+.k-alert .py-tag {
+  background: #e24a9a;
+}
+.k-forecast .py-tag {
+  background: #5ad1e0;
+}
+.k-brief .py-tag {
+  background: #7dd3a0;
+}
+
+.py-agent {
+  color: #6b8496;
+  font-size: 10px;
+}
+
+.py-t {
+  margin-left: auto;
+  color: #6b8496;
+  font-size: 10px;
+}
+
+.py-body {
+  color: #d7e2ea;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.py-empty {
+  margin: auto;
+  padding: 24px;
+  color: #6b8496;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.py-empty small {
+  color: #4e6577;
+}
+
+.py-map {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.py-mapbar {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1b2a38;
+}
+
+.py-mapbar input {
+  flex: 1;
+  min-height: 0;
+  padding: 5px 8px;
+  border: 1px solid #1b2a38;
+  border-radius: 6px;
+  background: #0c121a;
+  color: #c6d4de;
+  font: inherit;
+  font-size: 11px;
+}
+
+.py-mapbar a {
+  color: #5ad1e0;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.py-map iframe {
+  flex: 1;
+  width: 100%;
+  border: 0;
+  background: #05070a;
+}
+
+.py-foot {
+  padding: 6px 0;
+  border-top: 1px solid #1b2a38;
+  overflow: hidden;
+  color: #6b8496;
+  font-size: 10.5px;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.py-tick {
+  display: inline-block;
+  padding-left: 100%;
+}
+
+.py-tick .sep {
+  margin: 0 10px;
+  color: #e24a9a;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .py-tick {
+    animation: pytick 26s linear infinite;
+  }
+  @keyframes pytick {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .py-tick {
+    padding-left: 10px;
   }
 }
 

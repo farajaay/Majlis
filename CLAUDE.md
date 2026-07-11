@@ -19,6 +19,12 @@ storage (see "Live deployment state" below).
 - `webapp/`: normal Next.js/TypeScript conventions apply; it's a separate
   build with its own `package.json`, not subject to the stdlib-only rule.
 
+## Skills
+- `.claude/skills/scroll-world/` — how to modify the hosted webapp's landing
+  (transcript) page, its Scroll-World world-map backdrop, and the PYTHIA
+  oracle side console. Load it before editing `webapp/app/Transcript.tsx`,
+  `ScrollWorld.tsx`, `PythiaPanel.tsx`, or their styles.
+
 ## Who's who
 - **Ahmad** — GitHub login `farajaay`, owns this repo and the Vercel account
   it's deployed under. The human directing this project; the one who opens

@@ -5,6 +5,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { ScrollWorld } from "./ScrollWorld";
+import { PythiaPanel } from "./PythiaPanel";
 
 type Message = {
   seq: number;
@@ -366,6 +368,8 @@ export function Transcript({ me }: { me: string }) {
 
   return (
     <>
+      <ScrollWorld />
+      <PythiaPanel />
       <header className="command-header">
         <div className="brand-zone">
           <span className="wordmark">
