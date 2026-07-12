@@ -84,43 +84,84 @@ class AuthHeaderTests(unittest.TestCase):
 
 class FormatterTests(unittest.TestCase):
     def test_world_brief_format(self):
-        view = {"summary": "calm", "event_count": 3, "domains": ["geo", "mkt", "cyber"]}
+        # /agent/view: domains is {category: count} (PYTHIA's real schema)
+        view = {"summary": "calm", "event_count": 3,
+                "domains": {"geo": 5, "markets": 3, "cyber": 1}}
         out = pythia_bridge.format_world_brief(view)
         self.assertIn("3 live events", out)
-        self.assertIn("geo, mkt, cyber", out)
+        self.assertIn("geo", out)          # highest-count domain listed first
+        self.assertTrue(out.index("geo") < out.index("cyber"))
         self.assertIn("calm", out)
+
+    def test_world_brief_falls_back_to_events_by_domain(self):
+        # no world brief yet → derive domains from events_by_domain
+        view = {"event_count": 2, "domains": {},
+                "events_by_domain": {"seismic": [{}, {}], "news": [{}]}}
+        out = pythia_bridge.format_world_brief(view)
+        self.assertIn("2 live events", out)
+        self.assertIn("seismic", out)
+
+    def test_brief_delta_format(self):
+        # SSE `world` payload is a WorldBrief: text + domains {cat: count}
+        out = pythia_bridge.format_brief_delta({"text": "tense", "domains": {"geo": 4, "mkt": 2}})
+        self.assertIn("6 live events", out)   # sum of domain counts
+        self.assertIn("geo", out)
+        self.assertIn("tense", out)
 
     def test_prediction_alert_format(self):
         pred = {"statement": "rate cut", "probability": 0.72,
-                "horizon": "30d", "location": "US", "split": True}
+                "horizon": "month", "location": "US", "split": True}
         out = pythia_bridge.format_prediction_alert(pred)
-        self.assertIn("[30d]", out)
+        self.assertIn("[month]", out)
         self.assertIn("rate cut", out)
         self.assertIn("72%", out)
         self.assertIn("US", out)
         self.assertIn("swarm split", out)
 
+    def test_event_alert_format(self):
+        out = pythia_bridge.format_event_alert(
+            {"category": "seismic", "title": "M6.1 offshore", "summary": "no tsunami"})
+        self.assertIn("SEISMIC:", out)
+        self.assertIn("M6.1 offshore", out)
+        self.assertIn("no tsunami", out)
 
-class HandleDeltaThresholdTests(unittest.TestCase):
-    def test_only_above_threshold_predictions_posted(self):
-        evt = {"predictions": [
-            {"statement": "hi", "probability": 0.9, "horizon": "7d", "location": "X"},
-            {"statement": "lo", "probability": 0.1, "horizon": "7d", "location": "Y"},
+    def test_iter_view_events_flattens_and_tags(self):
+        view = {"events_by_domain": {"geo": [{"title": "a"}], "cyber": [{"title": "b", "category": "cyber"}]}}
+        got = list(pythia_bridge.iter_view_events(view))
+        self.assertEqual(len(got), 2)
+        self.assertEqual({e["category"] for e in got}, {"geo", "cyber"})
+
+
+class HandleDeltaTests(unittest.TestCase):
+    def test_world_delta_posts_brief(self):
+        evt = {"kind": "world", "payload": {"text": "calm", "domains": {"geo": 2}}}
+        with mock.patch.object(pythia_bridge, "post_to_majlis") as post:
+            pythia_bridge._handle_delta(evt)
+        self.assertEqual(post.call_count, 1)
+        self.assertEqual(post.call_args.kwargs.get("kind"), "brief")
+
+    def test_predictions_delta_posts_above_threshold_forecasts(self):
+        evt = {"kind": "predictions", "payload": [
+            {"statement": "hi", "probability": 0.9, "horizon": "week", "location": "X"},
+            {"statement": "lo", "probability": 0.1, "horizon": "week", "location": "Y"},
         ]}
         with mock.patch.object(pythia_bridge, "post_to_majlis") as post:
             pythia_bridge._handle_delta(evt)
         self.assertEqual(post.call_count, 1)
         self.assertEqual(post.call_args.kwargs.get("kind"), "forecast")
 
-    def test_only_above_threshold_events_posted(self):
-        evt = {"events": [
-            {"title": "big", "salience": 0.9, "category": "geo", "summary": "s"},
-            {"title": "small", "salience": 0.1, "category": "geo", "summary": "s"},
-        ]}
+    def test_snapshot_delta_posts_forecasts_from_payload(self):
+        evt = {"kind": "snapshot", "payload": {
+            "predictions": [{"statement": "hi", "probability": 0.95, "horizon": "24h", "location": "Z"}]}}
         with mock.patch.object(pythia_bridge, "post_to_majlis") as post:
             pythia_bridge._handle_delta(evt)
         self.assertEqual(post.call_count, 1)
-        self.assertEqual(post.call_args.kwargs.get("kind"), "alert")
+        self.assertEqual(post.call_args.kwargs.get("kind"), "forecast")
+
+    def test_irrelevant_kind_is_noop(self):
+        with mock.patch.object(pythia_bridge, "post_to_majlis") as post:
+            pythia_bridge._handle_delta({"kind": "run", "payload": {"id": "r1"}})
+        post.assert_not_called()
 
 
 if __name__ == "__main__":

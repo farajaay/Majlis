@@ -17,9 +17,10 @@ The Majlis side is confirmed against server/main.py + docs/PROTOCOL.md:
              as `Authorization: Bearer <token>`. We send whichever env var is
              set (MAJLIS_KEY / MAJLIS_TOKEN), matching clients/majlis.py.
 
-The PYTHIA-side endpoints (/links, /agent/view, /state/stream) are confirmed
-against PYTHIA's own API; only the two delta keys in _handle_delta are worth a
-one-time `curl -N $PYTHIA_BASE/state/stream` sanity check (noted inline).
+The PYTHIA-side endpoints and payload shapes (/links, /agent/view with its
+`domains` {category: count} + `events_by_domain`, and /state/stream's
+{kind, payload} frames) are confirmed against PYTHIA's engine/server.py,
+engine/state.py, and engine/models.py.
 
 Run alongside run.sh / tunnel.sh (e.g. `python3 scripts/pythia_bridge.py &` or
 under your process manager of choice). Requires PYTHIA's own stack already
@@ -110,11 +111,37 @@ def check_pythia_ready() -> bool:
         return False
 
 
+def _top_domains(domains, events_by_domain) -> list:
+    """PYTHIA's WorldBrief.domains is {category: count}; fall back to the
+    categories present in events_by_domain when a brief hasn't set them yet."""
+    if isinstance(domains, dict) and domains:
+        return sorted(domains, key=lambda k: domains.get(k, 0), reverse=True)[:6]
+    if isinstance(domains, list) and domains:      # defensive
+        return list(domains)[:6]
+    ebd = events_by_domain or {}
+    return sorted(ebd, key=lambda k: len(ebd.get(k) or []), reverse=True)[:6]
+
+
+def _brief_line(text: str, top: list, n_events) -> str:
+    across = ", ".join(top) if top else "—"
+    head = f"World brief — {n_events} live events across {across}."
+    text = (text or "").strip()
+    return f"{head}\n{text}" if text else head
+
+
 def format_world_brief(view: dict) -> str:
-    summary = view.get("summary", "").strip()
-    n_events = view.get("event_count", 0)
-    domains = ", ".join(view.get("domains", [])[:6])
-    return f"World brief — {n_events} live events across {domains}.\n{summary}"
+    """Brief from GET /agent/view (keys: summary, event_count, domains dict,
+    events_by_domain)."""
+    top = _top_domains(view.get("domains"), view.get("events_by_domain"))
+    return _brief_line(view.get("summary"), top, view.get("event_count", 0))
+
+
+def format_brief_delta(brief: dict) -> str:
+    """Brief from an SSE `world` payload (a WorldBrief.model_dump(): text +
+    domains {category: count})."""
+    domains = brief.get("domains") or {}
+    n_events = sum(domains.values()) if isinstance(domains, dict) else 0
+    return _brief_line(brief.get("text"), _top_domains(domains, None), n_events)
 
 
 def format_prediction_alert(pred: dict) -> str:
@@ -123,7 +150,25 @@ def format_prediction_alert(pred: dict) -> str:
     horizon = pred.get("horizon", "")
     loc = pred.get("location", "")
     split = " (swarm split)" if pred.get("split") else ""
-    return f"[{horizon}] {stmt} — {prob:.0%} probability, {loc}{split}"
+    tail = f", {loc}" if loc else ""
+    return f"[{horizon}] {stmt} — {prob:.0%} probability{tail}{split}"
+
+
+def format_event_alert(e: dict) -> str:
+    cat = (e.get("category") or "event").upper()
+    line = f"{cat}: {e.get('title', '')}"
+    summary = (e.get("summary") or "").strip()
+    return f"{line} — {summary}" if summary else line
+
+
+def iter_view_events(view: dict):
+    """Flatten /agent/view's events_by_domain into individual event dicts,
+    tagging each with its category."""
+    for cat, events in (view.get("events_by_domain") or {}).items():
+        for e in (events or []):
+            e = dict(e)
+            e.setdefault("category", cat)
+            yield e
 
 
 def heartbeat_loop():
@@ -161,18 +206,28 @@ def stream_loop():
 
 
 def _handle_delta(evt: dict):
-    # PYTHIA's docs describe /state as "predictions + world + runs + flags" but
-    # don't pin the exact delta keys — run `curl -N $PYTHIA_BASE/state/stream`
-    # once and adjust the two .get() keys below if they differ.
-    for pred in evt.get("predictions", []) or []:
+    # PYTHIA's SSE frames are {"kind", "ts", "payload"} (engine/state.py:publish).
+    # Relevant kinds: "world" (payload = WorldBrief), "predictions" (payload =
+    # list[Prediction]), "snapshot" (payload has world + predictions). Events are
+    # NOT streamed — they only live in /agent/view, so the heartbeat/pulse carry
+    # alerts; the stream carries the brief and forecasts.
+    kind = evt.get("kind")
+    payload = evt.get("payload")
+
+    if kind == "world" and payload:
+        post_to_majlis(format_brief_delta(payload), kind="brief")
+        return
+
+    if kind == "predictions":
+        preds = payload or []
+    elif kind == "snapshot":
+        preds = (payload or {}).get("predictions") or []
+    else:
+        return
+
+    for pred in preds:
         if pred.get("probability", 0) >= PROBABILITY_THRESHOLD:
             post_to_majlis(format_prediction_alert(pred), kind="forecast")
-
-    for e in evt.get("events", []) or []:
-        if e.get("salience", 0) >= SALIENCE_THRESHOLD:
-            title = e.get("title", "")
-            cat = e.get("category", "event").upper()
-            post_to_majlis(f"{cat}: {title} — {e.get('summary', '')}", kind="alert")
 
 
 def main():

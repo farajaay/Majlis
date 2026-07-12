@@ -64,16 +64,15 @@ def main() -> int:
     _post(bridge.format_world_brief(view), "brief")
     posted = 1
 
-    # If the agent view already carries predictions/events, forward the salient
-    # ones too (guarded — absent keys simply post nothing).
+    # Forward the salient predictions and events the agent view carries
+    # (guarded — absent keys simply post nothing).
     for pred in (view.get("predictions") or []):
         if pred.get("probability", 0) >= bridge.PROBABILITY_THRESHOLD:
             _post(bridge.format_prediction_alert(pred), "forecast")
             posted += 1
-    for e in (view.get("events") or []):
+    for e in bridge.iter_view_events(view):     # flattens events_by_domain
         if e.get("salience", 0) >= bridge.SALIENCE_THRESHOLD:
-            cat = e.get("category", "event").upper()
-            _post(f"{cat}: {e.get('title', '')} — {e.get('summary', '')}", "alert")
+            _post(bridge.format_event_alert(e), "alert")
             posted += 1
 
     print(f"[pythia_pulse] posted {posted} item(s) to {bridge.MAJLIS_BASE} "
