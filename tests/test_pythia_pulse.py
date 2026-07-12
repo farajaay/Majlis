@@ -51,15 +51,15 @@ class PulseTests(unittest.TestCase):
 
     def test_posts_brief_and_salient_items(self):
         view = {
-            "summary": "calm", "event_count": 3, "domains": ["geo", "mkt"],
+            "summary": "calm", "event_count": 3, "domains": {"geo": 2, "mkt": 1},
             "predictions": [
-                {"statement": "hi", "probability": 0.9, "horizon": "7d", "location": "X"},
-                {"statement": "lo", "probability": 0.1, "horizon": "7d", "location": "Y"},
+                {"statement": "hi", "probability": 0.9, "horizon": "week", "location": "X"},
+                {"statement": "lo", "probability": 0.1, "horizon": "week", "location": "Y"},
             ],
-            "events": [
-                {"title": "big", "salience": 0.9, "category": "geo", "summary": "s"},
-                {"title": "small", "salience": 0.1, "category": "geo", "summary": "s"},
-            ],
+            "events_by_domain": {"geo": [
+                {"title": "big", "salience": 0.9, "summary": "s"},
+                {"title": "small", "salience": 0.1, "summary": "s"},
+            ]},
         }
 
         def fake_http(url, *a, **k):
