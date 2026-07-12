@@ -1,0 +1,58 @@
+name: PYTHIA public page
+
+# Publishes a PUBLIC (no-login) PYTHIA dashboard to GitHub Pages at
+#   https://<owner>.github.io/<repo>/
+# On a schedule it snapshots the live council's oracle feed into a static
+# oracle.json (the credential stays here in the Action) and redeploys the page,
+# so anyone with the link sees the current feed — no sign-in, no PC.
+#
+# One-time enable (from a phone): repo → Settings → Pages → Build and deployment
+# → Source: "GitHub Actions". To publish the LIVE feed instead of an empty one,
+# add the secret MAJLIS_DST_TOKEN (a PAT in ALLOWED_GITHUB_LOGINS). Without it
+# the page still builds and simply shows "no data yet".
+
+on:
+  schedule:
+    - cron: "23 * * * *"      # hourly
+  workflow_dispatch: {}
+  push:
+    branches: [main]
+    paths:
+      - "pages/pythia/**"
+      - "scripts/snapshot_oracle.py"
+      - ".github/workflows/pythia-pages.yml"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Snapshot the oracle feed into the page
+        env:
+          MAJLIS_BASE: ${{ vars.MAJLIS_DST_URL || 'https://majlis-webapp.vercel.app' }}
+          MAJLIS_TOKEN: ${{ secrets.MAJLIS_DST_TOKEN }}
+          MAJLIS_ROOM: ${{ vars.MAJLIS_ROOM || 'oracle' }}
+        run: python3 scripts/snapshot_oracle.py pages/pythia/oracle.json
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true      # turn Pages on automatically on first run
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages/pythia
+      - id: deploy
+        uses: actions/deploy-pages@v4

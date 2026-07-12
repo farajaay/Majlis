@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PYTHIA · oracle</title>
+<style>
+  :root{
+    --bg:#05080c; --line:#16232f; --dim:#6b8496; --ink:#c6d4de;
+    --magenta:#e24a9a; --cyan:#5ad1e0; --ok:#7dd3a0;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--ink);
+       font:14px/1.5 ui-monospace,Menlo,Consolas,monospace;overflow-x:hidden}
+  #world{position:fixed;inset:0;z-index:0;pointer-events:none}
+  .wrap{position:relative;z-index:1;max-width:720px;margin:0 auto;
+        padding:20px 16px 90px;min-height:100%}
+  header{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+         border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:16px}
+  header h1{margin:0;font-size:16px;letter-spacing:4px;color:#e9eff3;font-weight:600}
+  .live{display:inline-flex;align-items:center;gap:6px;color:var(--dim);font-size:11px}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+  @media (prefers-reduced-motion:no-preference){
+    .live .dot{box-shadow:0 0 0 0 rgba(125,211,160,.6);animation:pulse 2.2s ease-out infinite}
+    @keyframes pulse{70%{box-shadow:0 0 0 6px rgba(125,211,160,0)}100%{box-shadow:0 0 0 0 rgba(125,211,160,0)}}
+  }
+  .meta{margin-left:auto;color:var(--dim);font-size:11px;text-align:right}
+  .feed{display:flex;flex-direction:column;gap:12px}
+  .card{border:1px solid var(--line);border-left-width:3px;border-radius:8px;
+        padding:11px 13px;background:rgba(255,255,255,.02)}
+  .card.k-alert{border-left-color:var(--magenta)}
+  .card.k-forecast{border-left-color:var(--cyan)}
+  .card.k-brief{border-left-color:var(--ok)}
+  .card.k-note{border-left-color:var(--dim)}
+  .chead{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+  .tag{font-size:9.5px;letter-spacing:2px;padding:2px 7px;border-radius:4px;
+       color:var(--bg);background:var(--dim);font-weight:700}
+  .k-alert .tag{background:var(--magenta)} .k-forecast .tag{background:var(--cyan)}
+  .k-brief .tag{background:var(--ok)}
+  .who{color:var(--dim);font-size:11px} .t{margin-left:auto;color:var(--dim);font-size:11px}
+  .body{white-space:pre-wrap;overflow-wrap:anywhere;color:#dbe6ee;line-height:1.55}
+  .empty{color:var(--dim);text-align:center;padding:50px 16px;line-height:1.8}
+  .empty small{color:#4e6577}
+  footer{position:fixed;left:0;right:0;bottom:0;z-index:1;border-top:1px solid var(--line);
+         background:rgba(5,8,12,.86);backdrop-filter:blur(6px);
+         padding:7px 0;overflow:hidden;white-space:nowrap;color:var(--dim);font-size:11px}
+  .tick{display:inline-block;padding-left:100%}
+  .tick .sep{margin:0 12px;color:var(--magenta)}
+  @media (prefers-reduced-motion:no-preference){
+    .tick{animation:tick 30s linear infinite}
+    @keyframes tick{to{transform:translateX(-100%)}}
+  }
+  @media (prefers-reduced-motion:reduce){.tick{padding-left:12px}}
+</style>
+</head>
+<body>
+<canvas id="world" aria-hidden="true"></canvas>
+<div class="wrap">
+  <header>
+    <h1>PYTHIA</h1>
+    <span class="live"><span class="dot"></span><span id="src">oracle</span></span>
+    <span class="meta" id="meta">loading…</span>
+  </header>
+  <div class="feed" id="feed"></div>
+</div>
+<footer><span class="tick" id="tick"></span></footer>
+
+<script>
+// ---- Scroll-World backdrop (self-contained, vanilla port) ----
+const LAND=[[-168,-140,54,71],[-140,-64,48,70],[-128,-96,30,49],[-96,-72,30,47],
+ [-118,-93,15,31],[-92,-83,8,18],[-56,-20,60,83],[-81,-50,0,12],[-79,-35,-18,0],
+ [-73,-40,-35,-18],[-75,-65,-52,-35],[-10,30,40,60],[4,30,58,71],[-9,2,50,59],
+ [-17,50,15,35],[-10,45,-5,15],[10,42,-35,-5],[34,60,12,42],[40,180,50,75],
+ [60,120,34,52],[95,140,22,45],[68,90,8,34],[95,108,10,28],[95,141,-10,6],
+ [113,154,-39,-12],[166,179,-47,-34]];
+const LAT_TOP=80,LAT_BOT=-58,STEP=3;
+function buildDots(){const d=[];let i=0;for(const[a,b,c,e]of LAND)
+  for(let lon=a;lon<=b;lon+=STEP)for(let lat=c;lat<=e;lat+=STEP){
+    let j=(Math.sin(i*12.9898)*43758.5453)%1;d.push({lon,lat,j:j-Math.floor(j)});i++;}return d;}
+(function world(){
+  const cv=document.getElementById("world"),ctx=cv.getContext("2d");if(!ctx)return;
+  const dots=buildDots();const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let W,H,dpr,worldW;
+  const nodes=[3,97,220,355,480,610].map(n=>dots[n%dots.length]).filter(Boolean);
+  function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
+    worldW=Math.max(W*1.5,1100);cv.width=W*dpr|0;cv.height=H*dpr|0;
+    cv.style.width=W+"px";cv.style.height=H+"px";ctx.setTransform(dpr,0,0,dpr,0,0);}
+  const x=l=>((l+180)/360)*worldW,y=l=>((LAT_TOP-l)/(LAT_TOP-LAT_BOT))*H;
+  function draw(t){const off=reduce?worldW*.18:(t*.012)%worldW;ctx.clearRect(0,0,W,H);
+    for(const d of dots){const bx=x(d.lon),yy=y(d.lat)+(d.j-.5)*3;
+      for(const s of[-worldW,0,worldW]){const px=((bx-off)%worldW)+s;
+        if(px<-2||px>W+2)continue;ctx.fillStyle=`rgba(120,170,190,${.12+d.j*.12})`;
+        ctx.fillRect(px,yy,1.4,1.4);}}
+    for(let k=0;k<nodes.length;k++){const n=nodes[k];
+      const px=((x(n.lon)-off)%worldW+worldW)%worldW;if(px>W+6)continue;const py=y(n.lat);
+      const p=reduce?.5:.5+.5*Math.sin(t/900+k);
+      ctx.fillStyle=`rgba(226,74,154,${.16+p*.32})`;ctx.beginPath();
+      ctx.arc(px,py,1.5+p*1.7,0,7);ctx.fill();}}
+  let raf,last=0;function loop(t){if(t-last>33){draw(t);last=t;}raf=requestAnimationFrame(loop);}
+  addEventListener("resize",resize);resize();
+  reduce?draw(0):(raf=requestAnimationFrame(loop));
+})();
+
+// ---- feed ----
+const KINDS={brief:{tag:"WORLD BRIEF",cls:"k-brief"},alert:{tag:"ALERT",cls:"k-alert"},
+             forecast:{tag:"FORECAST",cls:"k-forecast"}};
+const meta=k=>KINDS[k]||{tag:(k||"note").toUpperCase(),cls:"k-note"};
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const clock=ts=>new Date(ts*1000).toLocaleString([],{month:"short",day:"numeric",hour:"2-digit",minute:"2-digit"});
+
+function render(data){
+  const feed=document.getElementById("feed");
+  const msgs=(data.messages||[]).filter(m=>m.kind!=="system");
+  document.getElementById("src").textContent=`${data.room||"oracle"} · ${msgs.length} signals`;
+  document.getElementById("meta").innerHTML=data.updated
+    ? `snapshot ${esc(clock(data.updated))}`:"";
+  if(!msgs.length){
+    feed.innerHTML=`<div class="empty">no oracle signals yet…<br>`+
+      `<small>${esc(data.note||"the feed is empty")}</small></div>`;
+    return;
+  }
+  feed.innerHTML=msgs.map(m=>{const mt=meta(m.kind);
+    return `<div class="card ${mt.cls}"><div class="chead">`+
+      `<span class="tag">${esc(mt.tag)}</span><span class="who">${esc(m.agent)}</span>`+
+      `<span class="t">${esc(clock(m.ts))}</span></div>`+
+      `<div class="body">${esc(m.content)}</div></div>`;}).join("");
+  const ticks=msgs.filter(m=>m.kind==="alert"||m.kind==="forecast")
+    .slice(-8).map(m=>esc(m.content.replace(/\s+/g," ").trim()));
+  document.getElementById("tick").innerHTML=ticks.length
+    ? ticks.join("<span class='sep'>◦</span>"):"awaiting signals";
+}
+
+fetch("./oracle.json?"+Date.now())
+  .then(r=>r.ok?r.json():Promise.reject(r.status))
+  .then(render)
+  .catch(()=>render({room:"oracle",messages:[],note:"oracle.json not found — the publish workflow hasn't run yet"}));
+</script>
+</body>
+</html>
