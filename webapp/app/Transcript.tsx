@@ -27,6 +27,21 @@ type Presence = {
 
 type ComposerMode = "ask" | "provoke" | "verify" | "decide" | "build";
 
+type ClaimStatus = "claimed" | "working" | "posted" | "failed" | "stale" | "superseded";
+
+type Claim = {
+  room: string;
+  seat: string;
+  scope: string;
+  trigger_seq: number;
+  status: ClaimStatus;
+  started_at: number;
+  updated_at: number;
+  expires_at: number | null;
+  last_error: string | null;
+  posted_seq: number | null;
+};
+
 type SeatStat = {
   agent: string;
   count: number;
@@ -34,6 +49,8 @@ type SeatStat = {
   decisions: number;
   files: number;
   presence?: Presence;
+  claim?: Claim;
+  derivedState: "not invoked" | "idle" | "working" | "failed" | "stale";
 };
 
 const MarkdownComponents: any = {
@@ -174,6 +191,7 @@ export function Transcript({ me }: { me: string }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [files, setFiles] = useState<FileMeta[]>([]);
   const [presence, setPresence] = useState<Presence[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
   const [text, setText] = useState("");
   const [mode, setMode] = useState<ComposerMode>("ask");
   const [target, setTarget] = useState("all");
@@ -197,6 +215,7 @@ export function Transcript({ me }: { me: string }) {
     setMessages([]);
     setFiles([]);
     setPresence([]);
+    setClaims([]);
     setTarget("all");
     setDrawerOpen(false);
     lastSeq.current = 0;
@@ -217,10 +236,11 @@ export function Transcript({ me }: { me: string }) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ agent: me, state: "active" }),
         });
-        const [msgs, fs, ps]: [Message[], FileMeta[], Presence[]] = await Promise.all([
+        const [msgs, fs, ps, cs]: [Message[], FileMeta[], Presence[], Claim[]] = await Promise.all([
           api(`/api/rooms/${room}/messages?since=${lastSeq.current}`),
           api(`/api/rooms/${room}/files`),
           api(`/api/rooms/${room}/presence`),
+          api(`/api/rooms/${room}/claims`),
         ]);
         if (stop) return;
         const fresh = msgs.filter((m) => !seenSeqs.current.has(m.seq));
@@ -231,6 +251,7 @@ export function Transcript({ me }: { me: string }) {
         }
         setFiles(fs);
         setPresence(ps);
+        setClaims(cs);
       } catch {
         /* transient */
       }
@@ -263,7 +284,10 @@ export function Transcript({ me }: { me: string }) {
     const ensure = (agent: string): SeatStat => {
       const existing = stats.get(agent);
       if (existing) return existing;
-      const created = { agent, count: 0, lastTs: 0, decisions: 0, files: 0, presence: presenceByAgent.get(agent) };
+      const created: SeatStat = { 
+        agent, count: 0, lastTs: 0, decisions: 0, files: 0, 
+        presence: presenceByAgent.get(agent), derivedState: "not invoked" 
+      };
       stats.set(agent, created);
       return created;
     };
@@ -277,12 +301,39 @@ export function Transcript({ me }: { me: string }) {
       if (m.kind === "file") stat.files += 1;
     }
     ensure(me);
+
+    for (const c of claims) {
+      const stat = ensure(c.seat);
+      if (!stat.claim || c.trigger_seq > stat.claim.trigger_seq) {
+        stat.claim = c;
+      }
+    }
+
+    const now = Date.now() / 1000;
+    for (const stat of stats.values()) {
+      const c = stat.claim;
+      if (!c) continue;
+      if (c.status === "failed") {
+        stat.derivedState = "failed";
+      } else if (c.status === "stale") {
+        stat.derivedState = "stale";
+      } else if (c.status === "posted" || c.status === "superseded") {
+        stat.derivedState = "idle";
+      } else if (c.status === "claimed" || c.status === "working") {
+        if (c.expires_at && c.expires_at < now) {
+          stat.derivedState = "stale";
+        } else {
+          stat.derivedState = "working";
+        }
+      }
+    }
+
     return [...stats.values()].sort((a, b) => {
-      const aLive = isStale(a.presence) ? 0 : 1;
-      const bLive = isStale(b.presence) ? 0 : 1;
+      const aLive = a.derivedState === "working" ? 2 : isStale(a.presence) ? 0 : 1;
+      const bLive = b.derivedState === "working" ? 2 : isStale(b.presence) ? 0 : 1;
       return bLive - aLive || b.lastTs - a.lastTs || a.agent.localeCompare(b.agent);
     });
-  }, [me, messages, presence, presenceByAgent]);
+  }, [me, messages, presence, presenceByAgent, claims]);
 
   const operationEvents = useMemo(() => {
     const opPattern = /(watch|claim|invoke|invocation|fail|error|blocked|started|complete|commit|push|shared file)/i;
@@ -470,11 +521,28 @@ export function Transcript({ me }: { me: string }) {
                   <span className="seal" style={{ background: seatColor(s.agent) }}>
                     {displayAgentEmoji(s.agent)}
                   </span>
-                  <div>
-                    <strong>{displayAgentName(s.agent)}</strong>
-                    <span>{s.count} turns - last {relativeAge(s.lastTs || s.presence?.last_seen)}</span>
+                  <div className="seat-info">
+                    <div className="seat-head">
+                      <strong>{displayAgentName(s.agent)}</strong>
+                      <span className={`status-badge ${s.derivedState.replace(" ", "-")}`}>
+                        {s.derivedState}
+                      </span>
+                      <span className={`status-dot ${isStale(s.presence) ? "away" : s.presence?.state || "away"}`} />
+                    </div>
+                    {s.claim ? (
+                      <div className="seat-claim-details">
+                        <span title="Trigger Sequence">#{s.claim.trigger_seq}</span>
+                        <span>• upd {relativeAge(s.claim.updated_at)}</span>
+                        {s.claim.posted_seq && <span>• pos #{s.claim.posted_seq}</span>}
+                        {s.claim.expires_at && s.derivedState === "working" && (
+                          <span>• exp {relativeAge(s.claim.expires_at).replace(' ago', '')}</span>
+                        )}
+                        {s.claim.last_error && <span className="error-text" title={s.claim.last_error}>• error</span>}
+                      </div>
+                    ) : (
+                      <span className="seat-turns">{s.count} turns - last {relativeAge(s.lastTs || s.presence?.last_seen)}</span>
+                    )}
                   </div>
-                  <span className={`status-dot ${isStale(s.presence) ? "away" : s.presence?.state || "away"}`} />
                 </div>
               ))}
             </div>

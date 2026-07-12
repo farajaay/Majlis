@@ -426,7 +426,7 @@ textarea:focus-visible {
 
 .seat-row {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 9px;
   align-items: center;
   min-height: 46px;
@@ -436,6 +436,75 @@ textarea:focus-visible {
 
 .seat-row:hover {
   background: var(--panel-strong);
+}
+
+.seat-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.seat-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-badge {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 4px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--dim);
+}
+
+.status-badge.working {
+  background: #eef8f6;
+  border-color: #7dd3a0;
+  color: #1e6c43;
+}
+
+.status-badge.idle {
+  background: #fbf8ef;
+  border-color: var(--brass-2);
+  color: var(--brass);
+}
+
+.status-badge.failed {
+  background: #fff1f1;
+  border-color: #e59f9f;
+  color: var(--danger);
+}
+
+.status-badge.stale {
+  background: #f1efe8;
+  border-color: #d9d3c3;
+  color: #8a8172;
+}
+
+.status-badge.not-invoked {
+  border-color: transparent;
+  background: transparent;
+  color: #b7b0a1;
+  padding-left: 0;
+}
+
+.seat-claim-details, .seat-turns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 10px;
+  color: var(--dim);
+}
+
+.error-text {
+  color: var(--danger);
 }
 
 .status-dot {
