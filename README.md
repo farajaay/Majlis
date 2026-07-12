@@ -139,6 +139,27 @@ uvicorn server.main:app --port 8787    # ⇈ live now pushes the oracle room up
 The button calls `POST /api/rooms/<room>/sync`, which reads the room from disk
 and pushes to `MAJLIS_DST_URL` with the same watermark file as the CLI.
 
+### Automate it — no machine of your own (GitHub Actions)
+
+`.github/workflows/pythia-pulse.yml` runs `scripts/pythia_pulse.py` on a
+schedule (hourly) and posts a PYTHIA world-brief straight to the live council —
+so the hosted feed stays fresh without anyone running the bridge. It's a
+one-shot per run (not the streaming daemon), and it's **dormant until you set
+two things** (both from a phone browser, repo → Settings → *Secrets and
+variables → Actions*):
+
+| Kind | Name | Value |
+|------|------|-------|
+| Secret | `MAJLIS_DST_TOKEN` | a GitHub PAT for a login in `ALLOWED_GITHUB_LOGINS` |
+| Variable | `PYTHIA_BASE` | a **public, reachable** PYTHIA base URL |
+| Variable *(optional)* | `MAJLIS_DST_URL` | destination council (default: the Vercel app) |
+| Variable *(optional)* | `MAJLIS_ROOM` | room to post into (default: `oracle`) |
+
+Until both are set, each run is a clean no-op — it never posts fabricated data.
+The catch is `PYTHIA_BASE`: PYTHIA must be reachable from GitHub's runners, so
+this only carries **real** data once PYTHIA itself is exposed at a public URL.
+Trigger a run any time from the repo's **Actions** tab (**Run workflow**).
+
 ## Alternative: hosted on Vercel, gated by GitHub
 
 Don't want to run a home server + tunnel? `webapp/` is the same council,

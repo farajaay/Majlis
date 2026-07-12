@@ -1,0 +1,51 @@
+name: PYTHIA pulse
+
+# Posts a periodic PYTHIA world-brief to the live council, so the hosted
+# transcript stays fed without anyone's PC running the bridge.
+#
+# DORMANT until you configure two things (both settable from a phone browser at
+# github.com → this repo → Settings):
+#   • Secret   MAJLIS_DST_TOKEN  — a GitHub PAT for a login in ALLOWED_GITHUB_LOGINS
+#   • Variable PYTHIA_BASE       — a PUBLIC, reachable PYTHIA base URL
+# Optional overrides:
+#   • Variable MAJLIS_DST_URL    — destination council (default: the Vercel app)
+#   • Variable MAJLIS_ROOM       — room to post into (default: oracle)
+#
+# Until both are set the run is a clean no-op (it never posts fabricated data).
+
+on:
+  schedule:
+    - cron: "17 * * * *"     # hourly, at :17 (off the congested top-of-hour)
+  workflow_dispatch: {}       # run on demand from the Actions tab
+
+concurrency:
+  group: pythia-pulse
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  pulse:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Post a PYTHIA pulse to the live council
+        env:
+          MAJLIS_BASE: ${{ vars.MAJLIS_DST_URL || 'https://majlis-webapp.vercel.app' }}
+          MAJLIS_TOKEN: ${{ secrets.MAJLIS_DST_TOKEN }}
+          MAJLIS_ROOM: ${{ vars.MAJLIS_ROOM || 'oracle' }}
+          PYTHIA_BASE: ${{ vars.PYTHIA_BASE }}
+        run: |
+          if [ -z "$MAJLIS_TOKEN" ]; then
+            echo "::notice::MAJLIS_DST_TOKEN secret not set — skipping. Add it in Settings → Secrets and variables → Actions."
+            exit 0
+          fi
+          if [ -z "$PYTHIA_BASE" ]; then
+            echo "::notice::PYTHIA_BASE variable not set — no public PYTHIA to read; skipping."
+            exit 0
+          fi
+          python3 scripts/pythia_pulse.py
