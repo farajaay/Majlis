@@ -25,6 +25,20 @@ storage (see "Live deployment state" below).
   oracle side console. Load it before editing `webapp/app/Transcript.tsx`,
   `ScrollWorld.tsx`, `PythiaPanel.tsx`, or their styles.
 
+## Tooling notes
+- **spec-kit** (github/spec-kit) — GitHub's spec-driven development toolkit.
+  Not installed in this repo yet, but worth reaching for on any
+  nontrivial new feature: write a spec first (`/speckit.specify`), clarify,
+  plan (`/speckit.plan`), break into tasks (`/speckit.tasks`), then
+  implement (`/speckit.implement`), instead of jumping straight to code.
+  Install via `uv tool install specify-cli --from
+  git+https://github.com/github/spec-kit.git` then `specify init . --integration
+  claude` to drop the slash commands into this repo. Pairs well with the
+  multi-agent council setup here (claude-code/codex/gemini all seated on
+  the same repo) — a spec/plan doc gives them a shared reference instead
+  of each agent improvising independently. Consider this before starting
+  large features in `webapp/` or `server/`, not for one-line fixes.
+
 ## Who's who
 - **Ahmad** — GitHub login `farajaay`, owns this repo and the Vercel account
   it's deployed under. The human directing this project; the one who opens
