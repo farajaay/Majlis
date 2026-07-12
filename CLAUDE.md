@@ -39,6 +39,15 @@ storage (see "Live deployment state" below).
   of each agent improvising independently. Consider this before starting
   large features in `webapp/` or `server/`, not for one-line fixes.
 
+## References (cached for reuse across dev/repos)
+- `docs/references/kinetics-motion.md` — spring-physics UI-motion cheatsheet
+  (Kinetics library: https://kinetics.colorion.co/,
+  https://github.com/ckissi/kinetics). Reach for it when adding animation to
+  the React `webapp/` (seat chips, claims panel, PYTHIA/Scroll-World): ready
+  spring presets, the go-to `cubic-bezier(0.34, 1.56, 0.64, 1)` overshoot
+  curve, and copy-ready CSS/React snippets. Self-contained — no need to hit
+  the site.
+
 ## Who's who
 - **Ahmad** — GitHub login `farajaay`, owns this repo and the Vercel account
   it's deployed under. The human directing this project; the one who opens
