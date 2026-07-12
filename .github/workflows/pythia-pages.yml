@@ -48,9 +48,10 @@ jobs:
           MAJLIS_TOKEN: ${{ secrets.MAJLIS_DST_TOKEN }}
           MAJLIS_ROOM: ${{ vars.MAJLIS_ROOM || 'oracle' }}
         run: python3 scripts/snapshot_oracle.py pages/pythia/oracle.json
+      # Pages must be enabled once by hand (Settings → Pages → Source: GitHub
+      # Actions) — the default workflow token can't create the Pages site, so
+      # `enablement: true` just errors. After that one-time toggle this succeeds.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true      # turn Pages on automatically on first run
       - uses: actions/upload-pages-artifact@v3
         with:
           path: pages/pythia
