@@ -97,19 +97,19 @@ export function ScrollWorld() {
       const offset = reduce ? worldW * 0.18 : (t * 0.012) % worldW;
       ctx!.clearRect(0, 0, W, H);
 
-      // dotted continents, tiled across the wrap
+      // dotted continents, tiled across the wrap — matches --paper (#212a35)
       for (const d of dots) {
         const baseX = lonToX(d.lon);
         const y = latToY(d.lat) + (d.j - 0.5) * 3;
         for (const shift of [-worldW, 0, worldW]) {
           const x = ((baseX - offset) % worldW) + shift;
           if (x < -2 || x > W + 2) continue;
-          ctx!.fillStyle = `rgba(36,49,66,${0.1 + d.j * 0.09})`;
+          ctx!.fillStyle = `rgba(33,42,53,${0.1 + d.j * 0.09})`;
           ctx!.fillRect(x, y, 1.4, 1.4);
         }
       }
 
-      // faint arcs between hot nodes
+      // faint arcs between hot nodes — matches --brass-2 (#c2872b)
       for (let k = 0; k < arcs.length; k++) {
         const [a, b] = arcs[k];
         const ax = ((lonToX(a.lon) - offset) % worldW + worldW) % worldW;
@@ -117,7 +117,7 @@ export function ScrollWorld() {
         if (Math.abs(ax - bx) > W) continue; // skip when wrapped apart
         const ay = latToY(a.lat), by = latToY(b.lat);
         const cx = (ax + bx) / 2, cy = Math.min(ay, by) - 60 - k * 12;
-        ctx!.strokeStyle = "rgba(181,122,24,0.14)";
+        ctx!.strokeStyle = "rgba(194,135,43,0.15)";
         ctx!.lineWidth = 1;
         ctx!.beginPath();
         ctx!.moveTo(ax, ay);
@@ -127,7 +127,7 @@ export function ScrollWorld() {
           const p = (t / 3200 + k * 0.33) % 1;
           const mx = (1 - p) * (1 - p) * ax + 2 * (1 - p) * p * cx + p * p * bx;
           const my = (1 - p) * (1 - p) * ay + 2 * (1 - p) * p * cy + p * p * by;
-          ctx!.fillStyle = "rgba(181,122,24,0.5)";
+          ctx!.fillStyle = "rgba(194,135,43,0.5)";
           ctx!.beginPath();
           ctx!.arc(mx, my, 1.8, 0, Math.PI * 2);
           ctx!.fill();
@@ -141,7 +141,7 @@ export function ScrollWorld() {
         if (x > W + 6) continue;
         const y = latToY(n.lat);
         const pulse = reduce ? 0.5 : 0.5 + 0.5 * Math.sin(t / 900 + k);
-        ctx!.fillStyle = `rgba(181,122,24,${0.18 + pulse * 0.3})`;
+        ctx!.fillStyle = `rgba(194,135,43,${0.18 + pulse * 0.3})`;
         ctx!.beginPath();
         ctx!.arc(x, y, 1.6 + pulse * 1.6, 0, Math.PI * 2);
         ctx!.fill();

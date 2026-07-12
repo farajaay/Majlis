@@ -1,7 +1,8 @@
 /* Guide-only additions. Reuses the shared tokens and transcript classes
-   (--ink/--panel/--line/--paper/--dim/--brass, header, .wordmark, .turn,
-   .turnhead, .who, .seal, .seat, .decision, .refs, .body) from globals.css
-   so the mock transcript always matches the real one. */
+   (ink, panel, line, paper, dim, brass, plus the fs, space, radius, ease
+   and dur scales; header, .wordmark, .turn, .turnhead, .who, .seal,
+   .seat, .decision, .refs, .body) from globals.css so the mock transcript
+   always matches the real one. */
 :root {
   --panel-raised: #1d2833;
   --faint: #5b7280;
@@ -12,51 +13,53 @@
 
 .guide-page a {
   color: var(--brass);
+  transition: color var(--dur-fast) var(--ease-out);
 }
 .guide-page a:hover {
+  color: var(--brass-2);
   text-decoration: underline;
 }
 .guide-page a:focus-visible,
 .guide-page button:focus-visible {
   outline: 2px solid var(--brass);
   outline-offset: 2px;
-  border-radius: 3px;
+  border-radius: var(--radius-sm);
 }
 
 .guide-page h1,
 .guide-page h2 {
-  font-family: Georgia, "Times New Roman", serif;
+  font-family: var(--font-display);
   font-weight: normal;
   text-wrap: balance;
   color: var(--paper);
-  margin: 0 0 14px;
+  margin: 0 0 var(--space-3);
 }
 
 .guide-topbar .sub {
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--fs-300);
   border-left: 1px solid var(--line);
-  padding-left: 14px;
+  padding-left: var(--space-4);
 }
 .guide-topbar .url {
   margin-left: auto;
-  font-size: 12.5px;
+  font-size: var(--fs-200);
   color: var(--faint);
 }
 .guide-topbar .url .mono {
   color: var(--dim);
 }
 .guide-page .mono {
-  font-family: ui-monospace, Menlo, Consolas, "SF Mono", monospace;
+  font-family: var(--font-mono);
 }
 
 .guide-shell {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 0 22px;
+  padding: 0 var(--space-6);
   display: grid;
   grid-template-columns: 220px minmax(0, 760px);
-  gap: 56px;
+  gap: var(--space-8);
   align-items: start;
   justify-content: center;
 }
@@ -68,27 +71,28 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 28px 0 40px;
+  padding: var(--space-7) 0 var(--space-8);
 }
 .guide-toc .eyebrow {
-  font-size: 11px;
+  font-size: var(--fs-100);
   letter-spacing: 0.12em;
   color: var(--faint);
   text-transform: uppercase;
-  margin-bottom: 10px;
+  margin-bottom: var(--space-3);
 }
 .guide-toc a {
   color: var(--dim);
-  font-size: 14px;
-  padding: 7px 10px;
-  border-radius: 7px;
+  font-size: var(--fs-400);
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-md);
   display: flex;
-  gap: 10px;
+  gap: var(--space-3);
   align-items: baseline;
   text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
 }
 .guide-toc a .n {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
   color: var(--faint);
 }
@@ -105,18 +109,18 @@
 }
 
 .guide-content {
-  padding: 40px 0 100px;
+  padding: var(--space-7) 0 100px;
   min-width: 0;
 }
 
 .guide-lede {
-  font-size: 18px;
+  font-size: var(--fs-500);
   line-height: 1.7;
   color: var(--paper);
   max-width: 62ch;
 }
 .guide-lede + .guide-lede {
-  margin-top: 14px;
+  margin-top: var(--space-3);
   color: var(--dim);
 }
 
@@ -128,15 +132,15 @@
   margin-top: 44px;
 }
 .guide-step .eyebrow {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-200);
   letter-spacing: 0.14em;
   color: var(--brass);
   text-transform: uppercase;
-  margin-bottom: 8px;
+  margin-bottom: var(--space-2);
 }
 .guide-step h2 {
-  font-size: 1.65rem;
+  font-size: var(--fs-600);
 }
 .guide-step p {
   max-width: 64ch;
@@ -144,22 +148,27 @@
 }
 .guide-step p.note {
   color: var(--dim);
-  font-size: 14.5px;
+  font-size: var(--fs-300);
 }
 
 .guide-panel {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 18px 20px;
-  margin-top: 22px;
+  border-radius: var(--radius-md);
+  padding: var(--space-4) var(--space-5);
+  margin-top: var(--space-6);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--dur-med) var(--ease-out);
+}
+.guide-panel:hover {
+  box-shadow: var(--shadow-md);
 }
 .guide-panel-label {
-  font-size: 11px;
+  font-size: var(--fs-100);
   letter-spacing: 0.1em;
   color: var(--faint);
   text-transform: uppercase;
-  margin-bottom: 14px;
+  margin-bottom: var(--space-4);
 }
 .guide-panel .turn {
   margin: 20px 0;
@@ -183,13 +192,13 @@
 .guide-mock-btn {
   background: var(--panel-raised);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 6px 10px;
   font-size: 13px;
   color: var(--paper);
 }
 .guide-mock-select {
-  font-family: ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 .guide-mock-btn {
   color: var(--dim);
@@ -213,17 +222,17 @@
   flex: 1;
   background: var(--panel-raised);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 9px 11px;
   font-size: 13.5px;
   color: var(--faint);
   font-style: italic;
 }
 .guide-mock-composer .send {
-  background: var(--brass);
+  background: linear-gradient(135deg, var(--brass-2), var(--brass));
   color: #1b1400;
   border: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 9px 16px;
   font-size: 13.5px;
   font-weight: 600;
@@ -252,7 +261,7 @@
   gap: 9px;
   background: var(--paper);
   color: #10171b;
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   padding: 10px 18px;
   font-size: 14px;
   font-weight: 600;
@@ -274,9 +283,10 @@
   position: relative;
   background: #0d1317;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   margin-top: 16px;
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
 }
 .guide-codeblock .cb-head {
   display: flex;
@@ -376,8 +386,13 @@
   padding: 13px 15px;
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   align-items: baseline;
+  transition: box-shadow var(--dur-med) var(--ease-out);
+}
+
+.guide-rule-card:hover {
+  box-shadow: var(--shadow-sm);
 }
 .guide-rule-card .tag {
   font-family: ui-monospace, monospace;
@@ -434,8 +449,8 @@
     opacity: 0;
     transform: translateY(10px);
     transition:
-      opacity 0.5s ease,
-      transform 0.5s ease;
+      opacity var(--dur-slow) var(--ease-spring),
+      transform var(--dur-slow) var(--ease-spring);
   }
   .guide-step.in {
     opacity: 1;
