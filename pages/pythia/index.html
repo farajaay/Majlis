@@ -83,21 +83,35 @@ function buildDots(){const d=[];let i=0;for(const[a,b,c,e]of LAND)
   const cv=document.getElementById("world"),ctx=cv.getContext("2d");if(!ctx)return;
   const dots=buildDots();const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
   let W,H,dpr,worldW;
-  const nodes=[3,97,220,355,480,610].map(n=>dots[n%dots.length]).filter(Boolean);
+  const nodes=[3,97,220,355,480,610,150,410].map(n=>dots[n%dots.length]).filter(Boolean);
+  const arcs=[[97,480],[220,610],[3,355],[150,410]]
+    .map(([a,b])=>[dots[a%dots.length],dots[b%dots.length]]).filter(([a,b])=>a&&b);
   function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;
-    worldW=Math.max(W*1.5,1100);cv.width=W*dpr|0;cv.height=H*dpr|0;
+    worldW=Math.max(W*1.4,1100);cv.width=W*dpr|0;cv.height=H*dpr|0;
     cv.style.width=W+"px";cv.style.height=H+"px";ctx.setTransform(dpr,0,0,dpr,0,0);}
   const x=l=>((l+180)/360)*worldW,y=l=>((LAT_TOP-l)/(LAT_TOP-LAT_BOT))*H;
-  function draw(t){const off=reduce?worldW*.18:(t*.012)%worldW;ctx.clearRect(0,0,W,H);
+  const wrap=px=>((px%worldW)+worldW)%worldW;
+  function draw(t){const off=reduce?worldW*.18:(t*.01)%worldW;ctx.clearRect(0,0,W,H);
+    // land — brighter, cool blue-teal so it clearly reads as a world map
     for(const d of dots){const bx=x(d.lon),yy=y(d.lat)+(d.j-.5)*3;
       for(const s of[-worldW,0,worldW]){const px=((bx-off)%worldW)+s;
-        if(px<-2||px>W+2)continue;ctx.fillStyle=`rgba(120,170,190,${.12+d.j*.12})`;
-        ctx.fillRect(px,yy,1.4,1.4);}}
-    for(let k=0;k<nodes.length;k++){const n=nodes[k];
-      const px=((x(n.lon)-off)%worldW+worldW)%worldW;if(px>W+6)continue;const py=y(n.lat);
-      const p=reduce?.5:.5+.5*Math.sin(t/900+k);
-      ctx.fillStyle=`rgba(226,74,154,${.16+p*.32})`;ctx.beginPath();
-      ctx.arc(px,py,1.5+p*1.7,0,7);ctx.fill();}}
+        if(px<-2||px>W+2)continue;ctx.fillStyle=`rgba(96,168,196,${.3+d.j*.28})`;
+        ctx.fillRect(px,yy,1.7,1.7);}}
+    // arcs — the PYTHIA "signal" lines, with a travelling pulse
+    for(let k=0;k<arcs.length;k++){const[a,b]=arcs[k];
+      const ax=wrap(x(a.lon)-off),bx=wrap(x(b.lon)-off);if(Math.abs(ax-bx)>W)continue;
+      const ay=y(a.lat),by=y(b.lat),cx=(ax+bx)/2,cy=Math.min(ay,by)-70-k*14;
+      ctx.strokeStyle="rgba(226,74,154,.28)";ctx.lineWidth=1;ctx.beginPath();
+      ctx.moveTo(ax,ay);ctx.quadraticCurveTo(cx,cy,bx,by);ctx.stroke();
+      if(!reduce){const p=(t/2600+k*.27)%1,
+        mx=(1-p)*(1-p)*ax+2*(1-p)*p*cx+p*p*bx,my=(1-p)*(1-p)*ay+2*(1-p)*p*cy+p*p*by;
+        ctx.fillStyle="rgba(90,209,224,.9)";ctx.beginPath();ctx.arc(mx,my,2,0,7);ctx.fill();}}
+    // pulsing hot nodes with a glow ring
+    for(let k=0;k<nodes.length;k++){const n=nodes[k];const px=wrap(x(n.lon)-off);
+      if(px>W+8)continue;const py=y(n.lat),p=reduce?.5:.5+.5*Math.sin(t/850+k);
+      ctx.fillStyle=`rgba(226,74,154,${.35+p*.45})`;ctx.beginPath();ctx.arc(px,py,2+p*2,0,7);ctx.fill();
+      ctx.strokeStyle=`rgba(226,74,154,${.25*(1-p)})`;ctx.lineWidth=1;ctx.beginPath();
+      ctx.arc(px,py,3+p*7,0,7);ctx.stroke();}}
   let raf,last=0;function loop(t){if(t-last>33){draw(t);last=t;}raf=requestAnimationFrame(loop);}
   addEventListener("resize",resize);resize();
   reduce?draw(0):(raf=requestAnimationFrame(loop));
