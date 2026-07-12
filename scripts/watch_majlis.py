@@ -23,8 +23,10 @@ import shlex
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
+import uuid
 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -327,6 +329,19 @@ UNRESOLVED_CLAIM_STATUSES = {"claimed", "working", "failed", "stale"}
 TERMINAL_CLAIM_STATUSES = {"posted", "superseded"}
 DEFAULT_CLAIM_TTL = 300  # seconds before an unfinished claim is no longer treated as active
 
+# A nonce identifying THIS watcher process to the claims CAS. Two processes
+# invoking the same seat get distinct owners, so the server's compare-and-swap
+# (409 on conflict) can tell "me advancing my own claim" from "someone else
+# grabbing it" and let exactly one win the race. Overridable for tests.
+CLAIM_OWNER = os.environ.get("MAJLIS_CLAIM_OWNER") or uuid.uuid4().hex
+
+
+def is_claim_conflict(exc):
+    """True if `exc` is the claims endpoint's 409 — another owner already holds
+    this (room, seat, trigger_seq). Older deployments that never 409 fall back
+    to the pre-CAS best-effort path, same spirit as try_get_claims."""
+    return isinstance(exc, urllib.error.HTTPError) and exc.code == 409
+
 
 def get_claims(api, room, seat=None):
     path = "/api/rooms/{}/claims".format(urllib.parse.quote(room, safe=""))
@@ -417,18 +432,27 @@ def claim_and_invoke(room, owned_seat, msg, seq, invoker, api, claim_ttl=DEFAULT
         if claim_blocks_invocation(find_claim(claims, owned_seat, seq), now=now):
             return None
         supersede_older_claims(api, room, owned_seat, seq, claims)
-        try_upsert_claim(api, room, owned_seat, seq, "claimed", expires_at=now + claim_ttl)
-        try_upsert_claim(api, room, owned_seat, seq, "working")
+        # Atomic grab: the GET above can race a second process that also saw no
+        # active claim. The server's CAS 409s the loser (is_claim_conflict), so
+        # only one of us proceeds; anything else here is best-effort as before.
+        try:
+            upsert_claim(api, room, owned_seat, seq, "claimed",
+                         expires_at=now + claim_ttl, owner=CLAIM_OWNER)
+        except Exception as exc:
+            if is_claim_conflict(exc):
+                return None
+        try_upsert_claim(api, room, owned_seat, seq, "working", owner=CLAIM_OWNER)
     transcript = fetch_transcript(api, room)
     result = normalize_invocation_result(invoker.invoke(room, owned_seat, msg, transcript))
     if claims is not None:
         if result:
-            try_upsert_claim(api, room, owned_seat, seq, "posted", posted_seq=result.posted_seq)
+            try_upsert_claim(api, room, owned_seat, seq, "posted",
+                             posted_seq=result.posted_seq, owner=CLAIM_OWNER)
         else:
             try_upsert_claim(
                 api, room, owned_seat, seq,
                 "stale" if result.stale else "failed",
-                last_error=result.last_error,
+                last_error=result.last_error, owner=CLAIM_OWNER,
             )
     return result
 

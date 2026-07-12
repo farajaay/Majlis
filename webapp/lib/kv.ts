@@ -41,7 +41,35 @@ export type Claim = {
   expires_at: number | null;
   last_error: string | null;
   posted_seq: number | null;
+  // Per-process nonce identifying who holds this claim. Optional for
+  // backwards compatibility: legacy records (and callers that don't send an
+  // owner) have `null` and get the old last-write-wins behaviour. When set,
+  // it turns the upsert into a compare-and-swap so a second process can't
+  // steal a claim another owner is actively holding — see upsertClaim.
+  owner?: string | null;
 };
+
+// Raised by upsertClaim when a POST would overwrite a claim that a *different*
+// owner is currently holding (active-unexpired or terminal). The route maps
+// this to HTTP 409 so a racing watcher backs off instead of both invoking.
+export class ClaimConflictError extends Error {
+  constructor(message = "claim held by another owner") {
+    super(message);
+    this.name = "ClaimConflictError";
+  }
+}
+
+// Whether an existing claim should block a different owner from grabbing it:
+// still-active work (claimed/working with an unexpired lease) or resolved for
+// good (posted/superseded). Mirrors claim_blocks_invocation in
+// scripts/watch_majlis.py — failed/stale are deliberately reclaimable.
+function claimBlocks(claim: Claim, now: number): boolean {
+  if (claim.status === "posted" || claim.status === "superseded") return true;
+  if (claim.status === "claimed" || claim.status === "working") {
+    return claim.expires_at == null || claim.expires_at > now;
+  }
+  return false;
+}
 
 // This project shares a MongoDB Atlas cluster with another Vercel project
 // (the only already-authorized, API-provisionable database on the account) —
@@ -198,6 +226,7 @@ export async function upsertClaim(
     expires_at?: number | null;
     last_error?: string | null;
     posted_seq?: number | null;
+    owner?: string | null;
   }
 ): Promise<Claim> {
   assertSafeName(room);
@@ -209,6 +238,16 @@ export async function upsertClaim(
   const col = await claims();
   const existing = await col.findOne({ room, seat: msg.seat, trigger_seq: msg.trigger_seq });
   const now = Date.now() / 1000;
+  // Compare-and-swap: reject a write from anyone other than the current owner
+  // while that owner's claim is still blocking. This closes the client's
+  // GET-then-POST race (scripts/watch_majlis.py claim_and_invoke) — the loser
+  // gets 409 and skips instead of both processes invoking. A null incoming
+  // owner never matches a held claim, so it can't steal one either; legacy
+  // records without an owner keep last-write-wins.
+  const incomingOwner = msg.owner ?? null;
+  if (existing && existing.owner && existing.owner !== incomingOwner && claimBlocks(existing, now)) {
+    throw new ClaimConflictError();
+  }
   const record: Claim = {
     room,
     seat: msg.seat,
@@ -220,6 +259,7 @@ export async function upsertClaim(
     expires_at: msg.expires_at !== undefined ? msg.expires_at : existing?.expires_at ?? null,
     last_error: msg.last_error !== undefined ? msg.last_error : existing?.last_error ?? null,
     posted_seq: msg.posted_seq !== undefined ? msg.posted_seq : existing?.posted_seq ?? null,
+    owner: incomingOwner ?? existing?.owner ?? null,
   };
   await col.updateOne(
     { room, seat: msg.seat, trigger_seq: msg.trigger_seq },

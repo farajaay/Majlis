@@ -98,10 +98,25 @@ class ClaimIn(BaseModel):
     expires_at: float | None = None
     last_error: str | None = None
     posted_seq: int | None = None
+    owner: str | None = None
 
 
 def _claim_key(seat: str, trigger_seq: int) -> str:
     return f"{seat}::{trigger_seq}"
+
+
+def _claim_blocks(claim: dict, now: float) -> bool:
+    """Whether an existing claim should block a *different* owner from taking
+    it over: still-active work (claimed/working, lease unexpired) or resolved
+    for good (posted/superseded). Mirrors claim_blocks_invocation in
+    scripts/watch_majlis.py; failed/stale stay reclaimable on purpose."""
+    status = claim.get("status")
+    if status in {"posted", "superseded"}:
+        return True
+    if status in {"claimed", "working"}:
+        expires_at = claim.get("expires_at")
+        return expires_at is None or float(expires_at) > now
+    return False
 
 
 def _read_claims(room: str) -> dict[str, dict]:
@@ -172,6 +187,13 @@ def post_claim(room: str, msg: ClaimIn, request: Request):
     key = _claim_key(seat, msg.trigger_seq)
     existing = claims.get(key)
     now = time.time()
+    # Compare-and-swap: reject a write from anyone but the current owner while
+    # that owner's claim is still blocking, so a second racing watcher gets 409
+    # and backs off instead of both invoking. A null incoming owner can't match
+    # a held claim; legacy ownerless records keep last-write-wins.
+    if existing and existing.get("owner") and existing["owner"] != msg.owner \
+            and _claim_blocks(existing, now):
+        raise HTTPException(409, "claim held by another owner")
     record = {
         "room": room,
         "seat": seat,
@@ -183,6 +205,7 @@ def post_claim(room: str, msg: ClaimIn, request: Request):
         "expires_at": msg.expires_at if msg.expires_at is not None else (existing or {}).get("expires_at"),
         "last_error": msg.last_error if msg.last_error is not None else (existing or {}).get("last_error"),
         "posted_seq": msg.posted_seq if msg.posted_seq is not None else (existing or {}).get("posted_seq"),
+        "owner": msg.owner if msg.owner is not None else (existing or {}).get("owner"),
     }
     claims[key] = record
     _write_claims(room, claims)

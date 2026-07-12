@@ -10,6 +10,7 @@ import importlib.util
 import os
 import time
 import unittest
+import urllib.error
 from unittest import mock
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -193,6 +194,49 @@ class RouteAddressedTests(unittest.TestCase):
         invoker.invoke.assert_not_called()
         self.assertEqual(invoked_state, {})
         self.assertEqual(failed, [])
+
+    def test_lost_claim_race_409_skips_without_invoking(self):
+        """The TOCTOU race the CAS closes: two processes both GET no active
+        claim, then both POST 'claimed'. The server 409s the loser; that
+        process must skip (no invoke, no state advance), not barge in."""
+        found = [("Test", {"seq": 60, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        posts = []
+
+        def api(path, data=None, method=None):
+            if "/claims" in path and method == "POST":
+                posts.append(dict(data))
+                # Another owner won the race a moment earlier.
+                raise urllib.error.HTTPError(path, 409, "Conflict", {}, None)
+            if "/claims" in path:
+                return []  # GET: looked clear when we checked
+            return []
+
+        invoked_state = {}
+        failed = watch_majlis.route_addressed(found, "codex", [], "codex", invoked_state, invoker, api)
+        invoker.invoke.assert_not_called()
+        self.assertEqual(invoked_state, {})
+        self.assertEqual(failed, [])
+        # The grab carried our owner nonce; that's what the server CAS keys on.
+        self.assertEqual(posts[0]["status"], "claimed")
+        self.assertEqual(posts[0]["owner"], watch_majlis.CLAIM_OWNER)
+
+    def test_non_conflict_error_on_grab_falls_back_to_invoking(self):
+        """A 409 means back off; any other grab failure (older deployment,
+        transient) must not silently drop the turn — fall back to invoking."""
+        found = [("Test", {"seq": 61, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]
+        invoker = mock.Mock(spec=watch_majlis.Invoker)
+        invoker.invoke.return_value = watch_majlis.InvocationResult(True, posted_seq=400)
+
+        def api(path, data=None, method=None):
+            if "/claims" in path and method == "POST" and (data or {}).get("status") == "claimed":
+                raise urllib.error.HTTPError(path, 500, "Server Error", {}, None)
+            if "/claims" in path:
+                return []
+            return []
+
+        watch_majlis.route_addressed(found, "codex", [], "codex", {}, invoker, api)
+        invoker.invoke.assert_called_once()
 
     def test_claim_lifecycle_on_success_is_claimed_working_posted(self):
         found = [("Test", {"seq": 53, "agent": "farajaay", "kind": "chat", "content": "@codex ping"})]

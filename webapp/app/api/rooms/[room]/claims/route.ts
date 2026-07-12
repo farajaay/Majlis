@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveIdentity } from "@/lib/identity";
-import { listClaims, upsertClaim } from "@/lib/kv";
+import { listClaims, upsertClaim, ClaimConflictError } from "@/lib/kv";
 
 export async function GET(req: NextRequest, { params }: { params: { room: string } }) {
   const id = await resolveIdentity(req);
@@ -24,6 +24,7 @@ export async function POST(req: NextRequest, { params }: { params: { room: strin
     expires_at?: number | null;
     last_error?: string | null;
     posted_seq?: number | null;
+    owner?: string | null;
   };
   if (typeof body.seat !== "string" || typeof body.trigger_seq !== "number") {
     return NextResponse.json({ error: "seat and trigger_seq are required" }, { status: 400 });
@@ -37,9 +38,13 @@ export async function POST(req: NextRequest, { params }: { params: { room: strin
       expires_at: body.expires_at,
       last_error: body.last_error,
       posted_seq: body.posted_seq,
+      owner: body.owner,
     });
     return NextResponse.json(record);
-  } catch {
+  } catch (err) {
+    if (err instanceof ClaimConflictError) {
+      return NextResponse.json({ error: err.message }, { status: 409 });
+    }
     return NextResponse.json({ error: "invalid room, seat, or status" }, { status: 400 });
   }
 }
