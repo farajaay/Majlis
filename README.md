@@ -171,7 +171,7 @@ pulls the live council's `oracle` feed into a static `pages/pythia/oracle.json`
 the Scroll-World map backdrop.
 
 - One-time, from a phone: repo → **Settings → Pages → Source: GitHub Actions**
-  (the workflow also tries to enable this for you on first run).
+  (required — the default workflow token can't enable Pages itself).
 - Add the **`MAJLIS_DST_TOKEN`** secret to publish the live feed; without it the
   page still builds and shows "no data yet".
 - It publishes **only the `oracle` room** — world-briefs/alerts/forecasts — not
