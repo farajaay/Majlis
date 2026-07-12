@@ -1,17 +1,67 @@
 :root {
+  /* -- color roles (shared across transcript, PYTHIA chrome, sign-in, guide) -- */
   --ink: #f8f6ef;
   --panel: #ffffff;
   --panel-strong: #f1efe7;
-  --line: #d9d3c3;
-  --paper: #243142;
-  --dim: #637083;
+  --line: #ddd4bd;
+  --line-soft: rgba(35, 44, 56, 0.07);
+  --paper: #212a35;
+  --dim: #5d6b7a;
   --muted: #8a8172;
-  --brass: #8f6200;
-  --brass-2: #b57a18;
-  --danger: #b13b3b;
+  --brass: #9c690e;
+  --brass-2: #c2872b;
+  --brass-soft: rgba(156, 105, 14, 0.14);
+  --teal: #2f9c95;
+  --danger: #b23c3c;
   --ok: #3c8b5a;
   --watch: #b27622;
-  --shadow: 0 18px 42px rgba(36, 49, 66, 0.1);
+
+  /* -- elevation -- */
+  --shadow-sm: 0 1px 2px rgba(33, 42, 53, 0.06), 0 1px 1px rgba(33, 42, 53, 0.04);
+  --shadow-md: 0 10px 28px rgba(33, 42, 53, 0.09), 0 2px 8px rgba(33, 42, 53, 0.05);
+  --shadow-lg: 0 26px 64px rgba(33, 42, 53, 0.15), 0 6px 18px rgba(33, 42, 53, 0.07);
+  --shadow: var(--shadow-md); /* back-compat alias for pre-redesign usage */
+
+  /* -- type scale -- */
+  --fs-100: 10.5px;
+  --fs-200: 12px;
+  --fs-300: 13.5px;
+  --fs-400: 15px;
+  --fs-500: 18px;
+  --fs-600: 23px;
+  --fs-700: 30px;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-mono: ui-monospace, Menlo, Consolas, "SF Mono", monospace;
+
+  /* -- spacing scale -- */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 48px;
+
+  /* -- radii -- */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+
+  /* -- motion: shared spring/ease vocabulary, honored below via prefers-reduced-motion -- */
+  --ease-spring: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 140ms;
+  --dur-med: 240ms;
+  --dur-slow: 420ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --dur-fast: 0.01ms;
+    --dur-med: 0.01ms;
+    --dur-slow: 0.01ms;
+  }
 }
 
 * {
@@ -23,13 +73,17 @@ body {
   margin: 0;
   min-height: 100%;
   color: var(--paper);
-  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: var(--fs-400);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* base tone lives on <html>; <body> is transparent so the Scroll-World
    backdrop (fixed, z-index -1) shows through the margins */
 html {
-  background: #e1ddd2;
+  background: #e3ded2;
 }
 
 body {
@@ -37,15 +91,17 @@ body {
 }
 
 body {
-  padding-bottom: 148px;
+  padding-bottom: 156px;
 }
 
 a {
   color: var(--brass);
   text-decoration: none;
+  transition: color var(--dur-fast) var(--ease-out);
 }
 
 a:hover {
+  color: var(--brass-2);
   text-decoration: underline;
 }
 
@@ -56,9 +112,11 @@ textarea {
   background: var(--panel);
   color: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  padding: 7px 11px;
   font: inherit;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out),
+    background var(--dur-fast) var(--ease-out);
 }
 
 button,
@@ -76,11 +134,19 @@ button:disabled {
 }
 
 button:hover:not(:disabled),
+select:hover {
+  border-color: var(--brass-2);
+}
+
+/* visible, consistent focus ring everywhere — never outline:none without this */
 button:focus-visible,
 select:focus-visible,
-textarea:focus-visible {
+textarea:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
   border-color: var(--brass);
-  outline: none;
 }
 
 .command-header {
@@ -89,13 +155,14 @@ textarea:focus-visible {
   z-index: 20;
   display: grid;
   grid-template-columns: minmax(260px, 0.8fr) minmax(360px, 1.5fr) auto;
-  gap: 14px;
+  gap: var(--space-4);
   align-items: center;
-  padding: 12px 18px;
-  background: rgba(248, 246, 239, 0.92);
+  padding: var(--space-3) var(--space-5);
+  background: rgba(248, 246, 239, 0.86);
   border-bottom: 1px solid var(--line);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
+  backdrop-filter: blur(16px) saturate(1.15);
+  -webkit-backdrop-filter: blur(16px) saturate(1.15);
 }
 
 .brand-zone,
@@ -106,34 +173,40 @@ textarea:focus-visible {
 
 .brand-zone {
   display: flex;
-  gap: 14px;
+  gap: var(--space-4);
   align-items: center;
 }
 
 .wordmark {
   display: flex;
   flex-direction: column;
-  gap: 1px;
-  font-family: Georgia, "Times New Roman", serif;
+  gap: 2px;
+  font-family: var(--font-display);
   line-height: 1.05;
   white-space: nowrap;
 }
 
 .wordmark b {
-  color: var(--brass);
-  font-size: 23px;
+  background: linear-gradient(135deg, var(--brass) 15%, var(--brass-2) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  font-size: var(--fs-600);
   font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
 .wordmark span {
   color: var(--dim);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .room-picker {
   display: grid;
-  gap: 3px;
+  gap: var(--space-1);
   min-width: 136px;
 }
 
@@ -141,21 +214,22 @@ textarea:focus-visible {
 .stat-label,
 .composer-controls label {
   color: var(--dim);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 10px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
 .state-zone {
   display: grid;
   grid-template-columns: 0.72fr 1.55fr 0.55fr 0.55fr;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .state-zone > div {
   min-width: 0;
   border-left: 1px solid var(--line);
-  padding-left: 10px;
+  padding-left: var(--space-3);
 }
 
 .state-zone strong {
@@ -163,7 +237,7 @@ textarea:focus-visible {
   min-width: 0;
   overflow: hidden;
   color: var(--paper);
-  font-size: 13px;
+  font-size: var(--fs-300);
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -171,7 +245,7 @@ textarea:focus-visible {
 
 .control-zone {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   justify-content: flex-end;
 }
@@ -180,45 +254,55 @@ textarea:focus-visible {
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: var(--panel);
-  padding: 6px 10px;
+  padding: 6px 11px;
+  transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.control-zone a:hover {
+  border-color: var(--brass-2);
+  transform: translateY(-1px);
 }
 
 .app-shell {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 330px;
-  gap: 18px;
+  gap: var(--space-4);
   max-width: 1360px;
   margin: 0 auto;
-  padding: 18px;
+  padding: var(--space-4);
 }
 
 .council-floor {
   min-width: 0;
   min-height: calc(100vh - 170px);
   border: 1px solid var(--line);
+  border-radius: var(--radius-md);
   /* translucent so Scroll-World drifts faintly behind the transcript;
-     turns are opaque cards, so text stays fully legible */
-  background: rgba(248, 246, 239, 0.82);
-  box-shadow: var(--shadow);
+     turns are opaque cards, so text stays fully legible. See
+     .claude/skills/a11y-pass for the contrast re-check rule tied to this. */
+  background: rgba(248, 246, 239, 0.85);
+  box-shadow: var(--shadow-md);
 }
 
 .shared-files {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: center;
   min-height: 44px;
-  padding: 10px 16px;
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--line);
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--fs-200);
 }
 
 .shared-files span {
   color: var(--muted);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
+  letter-spacing: 0.05em;
   text-transform: uppercase;
 }
 
@@ -226,37 +310,49 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel);
-  padding: 2px 9px;
+  padding: 2px 10px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.shared-files a:hover {
+  border-color: var(--brass-2);
 }
 
 #log {
-  padding: 10px 18px 28px;
+  padding: var(--space-3) var(--space-5) var(--space-7);
 }
 
 #empty {
   display: grid;
-  gap: 5px;
+  gap: var(--space-1);
   justify-items: center;
-  margin: 58px auto;
+  margin: 64px auto;
   color: var(--dim);
   text-align: center;
 }
 
 #empty strong {
   color: var(--paper);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 21px;
+  font-family: var(--font-display);
+  font-size: var(--fs-600);
   font-weight: 500;
 }
 
 .turn {
   position: relative;
-  margin: 14px 0;
+  margin: var(--space-4) 0;
   border: 1px solid var(--line);
-  border-left: 5px solid var(--seat-color);
-  border-radius: 8px;
+  border-left: 4px solid var(--seat-color);
+  border-radius: var(--radius-md);
   background: var(--panel);
+  box-shadow: var(--shadow-sm);
   overflow: hidden;
+  transition: box-shadow var(--dur-med) var(--ease-out), transform var(--dur-med) var(--ease-out);
+}
+
+.turn:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
 }
 
 .turn-prompt {
@@ -268,7 +364,7 @@ textarea:focus-visible {
 }
 
 .turn-decision {
-  border-color: rgba(143, 98, 0, 0.45);
+  border-color: rgba(156, 105, 14, 0.4);
   border-left-color: var(--brass);
   background: #fff7e3;
 }
@@ -279,12 +375,12 @@ textarea:focus-visible {
 }
 
 .turn-file {
-  border-left-color: #2f9c95;
+  border-left-color: var(--teal);
   background: #eef8f6;
 }
 
 .turn-failure {
-  border-color: rgba(177, 59, 59, 0.42);
+  border-color: rgba(178, 60, 60, 0.38);
   border-left-color: var(--danger);
   background: #fff1f1;
 }
@@ -292,10 +388,10 @@ textarea:focus-visible {
 .turn-head {
   display: grid;
   grid-template-columns: auto auto minmax(0, 1fr) auto;
-  gap: 9px;
+  gap: var(--space-2);
   align-items: center;
-  padding: 9px 12px;
-  border-bottom: 1px solid rgba(217, 211, 195, 0.72);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid rgba(221, 212, 189, 0.7);
 }
 
 .seq-badge {
@@ -304,8 +400,8 @@ textarea:focus-visible {
   border-radius: 999px;
   background: var(--panel-strong);
   color: var(--dim);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
   line-height: 20px;
   text-align: center;
 }
@@ -318,8 +414,9 @@ textarea:focus-visible {
   height: 28px;
   flex: 0 0 28px;
   border-radius: 50%;
+  box-shadow: var(--shadow-sm);
   color: #10171b;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 800;
 }
@@ -343,56 +440,67 @@ textarea:focus-visible {
 .op-list span,
 .drawer-decisions span {
   color: var(--dim);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
 }
 
 .turn-head time {
   color: var(--dim);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
   white-space: nowrap;
 }
 
 .body,
 .sys {
-  padding: 12px 14px 14px;
+  padding: var(--space-3) var(--space-4) var(--space-4);
   overflow-wrap: anywhere;
 }
 
 .sys {
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--fs-300);
   font-style: italic;
 }
 
 .refs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 0 14px 14px;
+  gap: var(--space-2);
+  padding: 0 var(--space-4) var(--space-4);
 }
 
 .refs a {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--panel-strong);
-  padding: 2px 8px;
-  font-size: 12px;
+  padding: 2px 9px;
+  font-size: var(--fs-200);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.refs a:hover {
+  border-color: var(--brass-2);
 }
 
 .context-rail {
   display: grid;
   align-content: start;
-  gap: 14px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
 .rail-panel {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   background: var(--ink);
-  box-shadow: 0 10px 28px rgba(36, 49, 66, 0.07);
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--dur-med) var(--ease-out);
+}
+
+.rail-panel:has(.seat-row:hover),
+.rail-panel:has(button:hover) {
+  box-shadow: var(--shadow-md);
 }
 
 .rail-head,
@@ -400,38 +508,39 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
   border-bottom: 1px solid var(--line);
 }
 
 .rail-head h2,
 .drawer-head h2 {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--fs-300);
   line-height: 1.2;
 }
 
 .rail-head span {
   color: var(--dim);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-200);
 }
 
 .seat-list {
   display: grid;
-  gap: 1px;
-  padding: 8px;
+  gap: 2px;
+  padding: var(--space-2);
 }
 
 .seat-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
-  gap: 9px;
+  gap: var(--space-2);
   align-items: center;
   min-height: 46px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 7px 8px;
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .seat-row:hover {
@@ -452,7 +561,7 @@ textarea:focus-visible {
 }
 
 .status-badge {
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
@@ -461,6 +570,7 @@ textarea:focus-visible {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--dim);
+  transition: background var(--dur-fast) var(--ease-out);
 }
 
 .status-badge.working {
@@ -512,6 +622,7 @@ textarea:focus-visible {
   height: 9px;
   border-radius: 50%;
   background: var(--line);
+  transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 
 .status-dot.active {
@@ -531,9 +642,9 @@ textarea:focus-visible {
 .op-list,
 .drawer-decisions {
   display: grid;
-  gap: 8px;
+  gap: var(--space-2);
   margin: 0;
-  padding: 10px 14px 14px 30px;
+  padding: var(--space-3) var(--space-4) var(--space-4) 30px;
 }
 
 .decision-list li,
@@ -546,15 +657,15 @@ textarea:focus-visible {
 .drawer-decisions strong {
   display: block;
   overflow-wrap: anywhere;
-  font-size: 13px;
+  font-size: var(--fs-300);
   line-height: 1.35;
 }
 
 .rail-empty {
   margin: 0;
-  padding: 14px;
+  padding: var(--space-4);
   color: var(--dim);
-  font-size: 13px;
+  font-size: var(--fs-300);
 }
 
 #composer {
@@ -564,30 +675,32 @@ textarea:focus-visible {
   left: 0;
   z-index: 30;
   border-top: 1px solid var(--line);
-  background: rgba(248, 246, 239, 0.96);
-  box-shadow: 0 -16px 36px rgba(36, 49, 66, 0.1);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(248, 246, 239, 0.94);
+  box-shadow: 0 -18px 40px rgba(33, 42, 53, 0.09);
+  backdrop-filter: blur(14px) saturate(1.1);
+  -webkit-backdrop-filter: blur(14px) saturate(1.1);
 }
 
 .composer-inner {
   max-width: 1180px;
   margin: 0 auto;
-  padding: 10px 14px 12px;
+  padding: var(--space-3) var(--space-4) var(--space-3);
 }
 
 .mode-strip {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   overflow-x: auto;
-  padding-bottom: 6px;
+  padding-bottom: var(--space-2);
 }
 
 .mode-strip button {
   flex: 0 0 auto;
   border-radius: 999px;
-  padding: 5px 12px;
+  padding: 5px 13px;
   color: var(--dim);
+  transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out),
+    color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-spring);
 }
 
 .mode-strip button.active {
@@ -595,14 +708,15 @@ textarea:focus-visible {
   background: #fff2ce;
   color: var(--paper);
   font-weight: 700;
+  transform: translateY(-1px);
 }
 
 .composer-controls {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 7px;
+  padding-bottom: var(--space-2);
 }
 
 .composer-controls label {
@@ -620,7 +734,7 @@ textarea:focus-visible {
 .composer-controls span {
   overflow: hidden;
   color: var(--dim);
-  font-size: 12px;
+  font-size: var(--fs-200);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -628,7 +742,7 @@ textarea:focus-visible {
 .composer-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 86px;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: stretch;
 }
 
@@ -641,9 +755,15 @@ textarea:focus-visible {
 }
 
 .composer-row button {
-  background: var(--brass);
+  background: linear-gradient(135deg, var(--brass-2), var(--brass));
   color: #fffaf0;
   font-weight: 700;
+  transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.composer-row button:hover:not(:disabled) {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 
 .drawer-backdrop {
@@ -665,7 +785,24 @@ textarea:focus-visible {
   overflow-y: auto;
   border-left: 1px solid var(--line);
   background: var(--ink);
-  box-shadow: -24px 0 48px rgba(36, 49, 66, 0.18);
+  box-shadow: var(--shadow-lg);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .decision-drawer {
+    animation: slide-in var(--dur-slow) var(--ease-spring);
+  }
+
+  @keyframes slide-in {
+    from {
+      transform: translateX(24px);
+      opacity: 0.6;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
 }
 
 .drawer-head {
@@ -711,15 +848,73 @@ textarea:focus-visible {
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 18px;
+  gap: var(--space-6);
+  padding: var(--space-5);
+  text-align: center;
+}
+
+.signin-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  width: min(380px, 100%);
+  padding: var(--space-7) var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
+
+.signin-card .wordmark {
+  align-items: center;
+  text-align: center;
+}
+
+.signin-card .wordmark b {
+  font-size: var(--fs-700);
+}
+
+.signin-lede {
+  margin: 0;
+  color: var(--dim);
+  font-size: var(--fs-300);
+  line-height: 1.5;
+}
+
+.signin-error {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid rgba(178, 60, 60, 0.35);
+  border-radius: var(--radius-sm);
+  background: #fff1f1;
+  color: var(--danger);
+  font-size: var(--fs-300);
 }
 
 .signin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   border: none;
-  background: var(--brass);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(135deg, var(--brass-2), var(--brass));
   color: var(--ink);
   font-weight: 600;
-  padding: 10px 20px;
+  font-size: var(--fs-400);
+  padding: 11px 22px;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-fast) var(--ease-spring), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.signin-btn:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.signin-guide-link {
+  font-size: var(--fs-300);
+  color: var(--dim);
 }
 
 .markdown-body p,
@@ -767,13 +962,13 @@ textarea:focus-visible {
 
 @media (prefers-reduced-motion: no-preference) {
   .turn {
-    animation: rise 0.28s ease-out;
+    animation: rise var(--dur-slow) var(--ease-spring);
   }
 
   @keyframes rise {
     from {
       opacity: 0;
-      transform: translateY(6px);
+      transform: translateY(8px);
     }
     to {
       opacity: 1;
@@ -815,7 +1010,12 @@ textarea:focus-visible {
   pointer-events: none;
 }
 
-/* ---- PYTHIA oracle side console (dark widget within the light app) ---- */
+/* ---- PYTHIA oracle side console (dark widget within the light app) ----
+   Colors stay hardcoded and scoped to the py- and pythia prefixed
+   selectors by design — see .claude/skills/scroll-world/SKILL.md and
+   .claude/skills/design-system. Type scale, spacing, radii, and motion
+   below reuse the shared tokens so the console's rhythm matches the rest
+   of the redesigned app. */
 #pythia-handle {
   position: fixed;
   right: 0;
@@ -824,24 +1024,28 @@ textarea:focus-visible {
   z-index: 25;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   writing-mode: vertical-rl;
   min-height: 0;
-  padding: 16px 7px;
+  padding: var(--space-4) 7px;
   border: 1px solid #1b2a38;
   border-right: none;
-  border-radius: 10px 0 0 10px;
+  border-radius: var(--radius-md) 0 0 var(--radius-md);
   background: #080b10;
   color: #6b8496;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-100);
   letter-spacing: 3px;
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-spring);
 }
 
 #pythia-handle:hover,
 #pythia-handle:focus-visible {
   border-color: #e24a9a;
   color: #e24a9a;
+  transform: translateY(-50%) translateX(-2px);
 }
 
 .py-dot {
@@ -886,10 +1090,11 @@ textarea:focus-visible {
   background: #080b10;
   border-left: 1px solid #1b2a38;
   color: #c6d4de;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: 12px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-200);
+  box-shadow: var(--shadow-lg);
   transform: translateX(101%);
-  transition: transform 0.22s ease;
+  transition: transform var(--dur-med) var(--ease-spring);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -909,8 +1114,8 @@ textarea:focus-visible {
 .py-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 11px 12px;
+  gap: var(--space-2);
+  padding: var(--space-3);
   border-bottom: 1px solid #1b2a38;
   background: linear-gradient(180deg, #0c121a, #080b10);
 }
@@ -921,12 +1126,12 @@ textarea:focus-visible {
   gap: 7px;
   letter-spacing: 3px;
   color: #e9eff3;
-  font-size: 12px;
+  font-size: var(--fs-200);
 }
 
 .py-sub {
   color: #6b8496;
-  font-size: 10px;
+  font-size: var(--fs-100);
   letter-spacing: 1px;
 }
 
@@ -936,13 +1141,14 @@ textarea:focus-visible {
 
 .py-pill {
   min-height: 0;
-  padding: 4px 8px;
+  padding: 4px 9px;
   border: 1px solid #1b2a38;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: transparent;
   color: #6b8496;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-100);
+  transition: border-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
 .py-pill:hover,
@@ -956,17 +1162,23 @@ textarea:focus-visible {
   display: flex;
   flex: 1;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: var(--space-3);
+  padding: var(--space-3);
   overflow-y: auto;
 }
 
 .py-card {
-  padding: 9px 11px;
+  padding: var(--space-2) var(--space-3);
   border: 1px solid #1b2a38;
   border-left-width: 3px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.015);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.02);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.py-card:hover {
+  transform: translateX(-2px);
 }
 
 .py-card.k-alert {
@@ -982,10 +1194,27 @@ textarea:focus-visible {
   border-left-color: #6b8496;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .py-card {
+    animation: py-rise var(--dur-slow) var(--ease-spring);
+  }
+
+  @keyframes py-rise {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
 .py-cardhead {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
   margin-bottom: 5px;
 }
 
@@ -1011,13 +1240,13 @@ textarea:focus-visible {
 
 .py-agent {
   color: #6b8496;
-  font-size: 10px;
+  font-size: var(--fs-100);
 }
 
 .py-t {
   margin-left: auto;
   color: #6b8496;
-  font-size: 10px;
+  font-size: var(--fs-100);
 }
 
 .py-body {
@@ -1029,7 +1258,7 @@ textarea:focus-visible {
 
 .py-empty {
   margin: auto;
-  padding: 24px;
+  padding: var(--space-6);
   color: #6b8496;
   line-height: 1.7;
   text-align: center;
@@ -1048,9 +1277,9 @@ textarea:focus-visible {
 
 .py-mapbar {
   display: flex;
-  gap: 6px;
+  gap: var(--space-2);
   align-items: center;
-  padding: 8px 10px;
+  padding: var(--space-2) var(--space-3);
   border-bottom: 1px solid #1b2a38;
 }
 
@@ -1059,16 +1288,23 @@ textarea:focus-visible {
   min-height: 0;
   padding: 5px 8px;
   border: 1px solid #1b2a38;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   background: #0c121a;
   color: #c6d4de;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--fs-100);
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.py-mapbar input:focus-visible {
+  border-color: #5ad1e0;
+  outline: 2px solid #5ad1e0;
+  outline-offset: 1px;
 }
 
 .py-mapbar a {
   color: #5ad1e0;
-  font-size: 11px;
+  font-size: var(--fs-100);
   white-space: nowrap;
 }
 
@@ -1080,7 +1316,7 @@ textarea:focus-visible {
 }
 
 .py-foot {
-  padding: 6px 0;
+  padding: var(--space-2) 0;
   border-top: 1px solid #1b2a38;
   overflow: hidden;
   color: #6b8496;
@@ -1095,7 +1331,7 @@ textarea:focus-visible {
 }
 
 .py-tick .sep {
-  margin: 0 10px;
+  margin: 0 var(--space-3);
   color: #e24a9a;
 }
 
@@ -1119,13 +1355,13 @@ textarea:focus-visible {
 @media (max-width: 760px) {
   body {
     padding-bottom: 210px;
-    font-size: 14px;
+    font-size: var(--fs-300);
   }
 
   .command-header {
     position: static;
-    gap: 10px;
-    padding: 10px 12px;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -1136,7 +1372,7 @@ textarea:focus-visible {
   }
 
   .wordmark b {
-    font-size: 20px;
+    font-size: var(--fs-500);
   }
 
   .room-picker {
