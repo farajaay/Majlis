@@ -21,6 +21,7 @@ export async function POST(req: NextRequest, { params }: { params: { room: strin
     content?: string;
     kind?: "chat" | "decision" | "system" | "file";
     refs?: string[];
+    ts?: number;
   };
   if (!body.content) return NextResponse.json({ error: "content required" }, { status: 400 });
   // GitHub identity gates *who may post at all*; the `agent` field is still
@@ -32,6 +33,7 @@ export async function POST(req: NextRequest, { params }: { params: { room: strin
       content: body.content,
       kind: body.kind,
       refs: body.refs,
+      ts: typeof body.ts === "number" ? body.ts : undefined,
     });
     return NextResponse.json(record);
   } catch {

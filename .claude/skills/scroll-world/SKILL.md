@@ -72,21 +72,28 @@ To tune:
 live PYTHIA map from a user-set, locally-persisted URL (`localStorage
 .pythia_base`).
 
-Getting live data onto the **hosted** page (no local PC involved):
-1. PYTHIA itself must be reachable at a **public** URL — a hosted page cannot
-   reach `localhost:8088` (that resolves to the *viewer's* machine). Put that
-   URL into the panel's map bar.
-2. Run the bridge pointed at this deployment, from anywhere with network access
-   to both PYTHIA and the site:
-   ```bash
-   MAJLIS_BASE="https://majlis-webapp.vercel.app" \
-   MAJLIS_TOKEN="<github-PAT in ALLOWED_GITHUB_LOGINS>" \
-   PYTHIA_BASE="https://<public-pythia-host>" \
-   MAJLIS_ROOM="oracle" \
-   python3 scripts/pythia_bridge.py
-   ```
-   The bridge already speaks the hosted API (`X-Majlis-Key` **or** Bearer PAT).
-   Until it runs, the panel shows "offline / awaiting feed" — that's expected.
+Getting data onto the **hosted** page. Two routes:
+
+*Local-first + sync on demand (recommended — no public PYTHIA needed).* Run
+PYTHIA + the bridge + the local FastAPI server on your machine so the oracle
+room fills up locally, then copy it up when you choose with
+`scripts/sync_room.py` (one-way, incremental, idempotent; preserves original
+timestamps via the message API's optional `ts` field):
+```bash
+MAJLIS_SRC_URL="http://localhost:8787" MAJLIS_SRC_KEY="$MAJLIS_KEY" \
+MAJLIS_DST_URL="https://majlis-webapp.vercel.app" MAJLIS_DST_TOKEN="<PAT>" \
+python3 scripts/sync_room.py oracle
+```
+
+*Direct feed (needs a public PYTHIA).* Point the bridge straight at the
+deployment — but PYTHIA must be reachable at a **public** URL, since a hosted
+page/bridge target can't reach `localhost:8088`:
+```bash
+MAJLIS_BASE="https://majlis-webapp.vercel.app" MAJLIS_TOKEN="<PAT>" \
+PYTHIA_BASE="https://<public-pythia-host>" python3 scripts/pythia_bridge.py
+```
+Either way, until data arrives the panel shows "offline / awaiting feed". For
+the live **map** view, paste a public PYTHIA URL into the panel's map bar.
 
 Kinds `brief`/`alert`/`forecast` are not in the app's typed `kind` enum but the
 store persists whatever it's given (`lib/kv.ts` → `kind ?? "chat"`), so they

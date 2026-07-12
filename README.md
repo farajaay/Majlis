@@ -101,6 +101,30 @@ cards and a scrolling event ticker — and the `◎ map` toggle embeds PYTHIA's
 live world map (`PYTHIA_BASE`) when it's reachable from the browser. Tunable
 thresholds and cadence are env vars at the top of `scripts/pythia_bridge.py`.
 
+### Run PYTHIA locally, push to the live app on demand
+
+PYTHIA lives on your machine (`localhost:8088`), and a hosted page can't reach
+`localhost`. So the practical setup is **local-first**: run PYTHIA + the bridge
++ the local FastAPI server on your machine, watch the oracle fill up on the
+local transcript — then copy those turns up to the hosted app *when you choose*
+with `scripts/sync_room.py`:
+
+```bash
+# on your machine, after the oracle room has some turns:
+export MAJLIS_SRC_URL="http://localhost:8787"  MAJLIS_SRC_KEY="$MAJLIS_KEY"
+export MAJLIS_DST_URL="https://majlis-webapp.vercel.app"
+export MAJLIS_DST_TOKEN="ghp_…"    # a GitHub PAT in ALLOWED_GITHUB_LOGINS
+python3 scripts/sync_room.py oracle            # push new oracle turns to live
+python3 scripts/sync_room.py oracle --dry-run  # preview without posting
+```
+
+It's one-way, incremental, and idempotent: a small watermark file
+(`.majlis_sync_state.json`) records the last source `seq` pushed to each
+destination, so re-runs only copy what's new. Original timestamps are preserved
+(the message API accepts an optional `ts`), so the live feed reads in real
+order, not clustered at sync time. The hosted PYTHIA tab then shows exactly
+what your local one does.
+
 ## Alternative: hosted on Vercel, gated by GitHub
 
 Don't want to run a home server + tunnel? `webapp/` is the same council,
