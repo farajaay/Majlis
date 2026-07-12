@@ -177,6 +177,33 @@ the Scroll-World map backdrop.
 - It publishes **only the `oracle` room** — world-briefs/alerts/forecasts — not
   the rest of the council. Anyone with the link can read it.
 
+### Or mirror from your PC (no public PYTHIA, no secret)
+
+If PYTHIA can't be exposed publicly, flip it around: let the machine that
+already runs PYTHIA + the local server do the work. `scripts/publish_mirror.py`
+reads the **local** oracle feed, bakes it into a single self-contained HTML file
+(`docs/index.html`, data inlined — no sidecar, works even as a bare file), and
+git-pushes it. GitHub then serves that static file — no public PYTHIA, no
+Actions token, no secret.
+
+- One-time: repo → **Settings → Pages → Source: Deploy from a branch → `main` /
+  `docs`**. Same public URL, `https://<owner>.github.io/<repo>/`.
+- Then run it on a schedule on your machine:
+  ```bash
+  export MAJLIS_KEY="…"                    # your local server's secret
+  python3 scripts/publish_mirror.py --push        # one refresh + push
+  # every 4 hours, pick one:
+  #   cron:            0 */4 * * *  cd /path/to/Majlis && python3 scripts/publish_mirror.py --push
+  #   Task Scheduler:  run the same command on a 4-hour trigger
+  #   or just leave a terminal open:  python3 scripts/publish_mirror.py --loop --push
+  ```
+- It only writes/pushes when the feed changed, preserves the last good page if
+  the local server is unreachable, and — like everything here — mirrors exactly
+  what's in the room, inventing nothing.
+
+Pick **one** Pages source: the Actions page above (`pages/pythia`) *or* this
+branch mirror (`docs/`) — not both.
+
 ## Alternative: hosted on Vercel, gated by GitHub
 
 Don't want to run a home server + tunnel? `webapp/` is the same council,
