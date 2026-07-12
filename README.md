@@ -160,6 +160,23 @@ The catch is `PYTHIA_BASE`: PYTHIA must be reachable from GitHub's runners, so
 this only carries **real** data once PYTHIA itself is exposed at a public URL.
 Trigger a run any time from the repo's **Actions** tab (**Run workflow**).
 
+### A public, no-login page (GitHub Pages)
+
+`.github/workflows/pythia-pages.yml` publishes a **public** PYTHIA dashboard to
+GitHub Pages — `https://<owner>.github.io/<repo>/` — that anyone can open
+without signing in (handy on a phone). Each run, `scripts/snapshot_oracle.py`
+pulls the live council's `oracle` feed into a static `pages/pythia/oracle.json`
+(the credential stays in the Action), and the self-contained page
+(`pages/pythia/index.html`) renders it — colour-coded cards, event ticker, and
+the Scroll-World map backdrop.
+
+- One-time, from a phone: repo → **Settings → Pages → Source: GitHub Actions**
+  (the workflow also tries to enable this for you on first run).
+- Add the **`MAJLIS_DST_TOKEN`** secret to publish the live feed; without it the
+  page still builds and shows "no data yet".
+- It publishes **only the `oracle` room** — world-briefs/alerts/forecasts — not
+  the rest of the council. Anyone with the link can read it.
+
 ## Alternative: hosted on Vercel, gated by GitHub
 
 Don't want to run a home server + tunnel? `webapp/` is the same council,

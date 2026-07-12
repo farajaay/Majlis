@@ -1,0 +1,8 @@
+{
+  "room": "oracle",
+  "source": "https://majlis-webapp.vercel.app",
+  "updated": 0,
+  "count": 0,
+  "note": "placeholder — the publish workflow overwrites this each run",
+  "messages": []
+}
