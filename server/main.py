@@ -4,7 +4,7 @@ Run:  uvicorn server.main:app --host 0.0.0.0 --port 8787
 Auth: set MAJLIS_KEY env var to require X-Majlis-Key header on all /api routes.
 Data: workspace/rooms/<room>/messages.jsonl  +  workspace/rooms/<room>/files/
 """
-import asyncio, json, os, re, time
+import asyncio, json, os, re, time, urllib.request, urllib.error
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
@@ -16,6 +16,9 @@ ROOT = Path(__file__).resolve().parent.parent
 WS = ROOT / "workspace" / "rooms"
 WS.mkdir(parents=True, exist_ok=True)
 KEY = os.environ.get("MAJLIS_KEY", "")
+# watermark for the on-demand "push to live" sync (see POST /api/rooms/{room}/sync);
+# shares format with scripts/sync_room.py so either can advance it.
+SYNC_STATE = ROOT / ".majlis_sync_state.json"
 
 app = FastAPI(title="Majlis")
 _subscribers: dict[str, list[asyncio.Queue]] = {}
@@ -203,6 +206,77 @@ async def post_message(room: str, msg: MsgIn, request: Request):
     for q in _subscribers.get(room, []):
         q.put_nowait(record)
     return record
+
+
+def _load_sync_state() -> dict:
+    if not SYNC_STATE.exists():
+        return {}
+    try:
+        return json.loads(SYNC_STATE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _save_sync_state(state: dict):
+    SYNC_STATE.write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+
+
+def _post_message_to(url: str, payload: dict, headers: dict):
+    data = json.dumps(payload).encode()
+    req = urllib.request.Request(url, data=data, method="POST")
+    req.add_header("Content-Type", "application/json")
+    for k, v in headers.items():
+        req.add_header(k, v)
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.loads(resp.read().decode())
+
+
+@app.post("/api/rooms/{room}/sync")
+def sync_room_to_dest(room: str, request: Request):
+    """Copy this room's messages to another Majlis backend (the live app), on
+    demand. The destination + credential live in the SERVER's environment
+    (MAJLIS_DST_URL + MAJLIS_DST_TOKEN/MAJLIS_DST_KEY), never in the browser —
+    the transcript's "push to live" button just triggers this. One-way and
+    incremental: a per-dest watermark means re-runs only push what's new, and
+    the original `ts` is preserved so the live feed reads in real order."""
+    _check_key(request)
+    room = _safe(room)
+    dst_url = os.environ.get("MAJLIS_DST_URL", "").rstrip("/")
+    dst_token = os.environ.get("MAJLIS_DST_TOKEN", "")
+    dst_key = os.environ.get("MAJLIS_DST_KEY", "")
+    if not dst_url or not (dst_token or dst_key):
+        raise HTTPException(400, "sync not configured — set MAJLIS_DST_URL and "
+                                 "MAJLIS_DST_TOKEN (a GitHub PAT) in the server environment")
+    headers = {}
+    if dst_key:
+        headers["X-Majlis-Key"] = dst_key
+    if dst_token:
+        headers["Authorization"] = f"Bearer {dst_token}"
+
+    skey = f"{dst_url}::{room}"
+    state = _load_sync_state()
+    since = int(state.get(skey, 0))
+    msgs = _read_messages(room, since)
+
+    pushed, highest = 0, since
+    for m in msgs:
+        payload = {"agent": m["agent"], "content": m["content"],
+                   "kind": m.get("kind", "chat"), "refs": m.get("refs", []),
+                   "ts": m["ts"]}
+        try:
+            _post_message_to(f"{dst_url}/api/rooms/{room}/messages", payload, headers)
+        except urllib.error.URLError as e:
+            if pushed:  # persist progress so a retry doesn't re-push what landed
+                state[skey] = highest
+                _save_sync_state(state)
+            raise HTTPException(502, f"pushed {pushed}, then failed at seq "
+                                     f"{m['seq']}: {getattr(e, 'reason', e)}")
+        highest, pushed = m["seq"], pushed + 1
+
+    if pushed:
+        state[skey] = highest
+        _save_sync_state(state)
+    return {"pushed": pushed, "through_seq": highest, "dest": dst_url, "room": room}
 
 
 @app.get("/api/rooms/{room}/stream")

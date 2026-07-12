@@ -164,6 +164,7 @@
     <span class="py-live"><span class="py-dot"></span>PYTHIA</span>
     <span class="py-sub" id="pythia-status">oracle</span>
     <span class="py-spacer"></span>
+    <button id="pythia-push" class="py-pill" title="Copy this feed to the live app">⇈ live</button>
     <button id="pythia-view" class="py-pill" title="Toggle live world map">◎ map</button>
     <button id="pythia-close" class="py-pill" title="Close panel">✕</button>
   </div>
@@ -313,6 +314,19 @@ function pyToggle(open){
 
 $("pythia-handle").onclick=()=>pyToggle();
 $("pythia-close").onclick=()=>pyToggle(false);
+$("pythia-push").onclick=async()=>{
+  const b=$("pythia-push");if(b.disabled)return;
+  const status=$("pythia-status");const prevText=b.textContent,prevSub=status.textContent;
+  b.disabled=true;b.textContent="pushing…";
+  try{
+    const r=await api(`/api/rooms/${PY_ROOM}/sync`,{method:"POST"});
+    b.textContent="✓ sent";status.textContent=`pushed ${r.pushed} → live`;
+  }catch(e){
+    let msg=String(e.message||e);try{msg=JSON.parse(msg).detail||msg}catch(_){}
+    b.textContent="✗ failed";status.textContent=msg.slice(0,64);
+  }
+  setTimeout(()=>{b.textContent=prevText;b.disabled=false;status.textContent=prevSub;},3000);
+};
 $("pythia-view").onclick=()=>{pyMap=!pyMap;
   $("pythia-map").hidden=!pyMap;$("pythia-feed").hidden=pyMap;
   $("pythia-view").classList.toggle("on",pyMap);

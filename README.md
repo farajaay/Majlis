@@ -125,6 +125,20 @@ destination, so re-runs only copy what's new. Original timestamps are preserved
 order, not clustered at sync time. The hosted PYTHIA tab then shows exactly
 what your local one does.
 
+**Prefer a button?** The local transcript's PYTHIA tab has a **⇈ live** button
+that does the same push — but the credential stays on the server, never in the
+browser. Set the destination in the *server's* environment before launching it:
+
+```bash
+export MAJLIS_KEY="choose-a-secret"
+export MAJLIS_DST_URL="https://majlis-webapp.vercel.app"
+export MAJLIS_DST_TOKEN="ghp_…"        # GitHub PAT in ALLOWED_GITHUB_LOGINS
+uvicorn server.main:app --port 8787    # ⇈ live now pushes the oracle room up
+```
+
+The button calls `POST /api/rooms/<room>/sync`, which reads the room from disk
+and pushes to `MAJLIS_DST_URL` with the same watermark file as the CLI.
+
 ## Alternative: hosted on Vercel, gated by GitHub
 
 Don't want to run a home server + tunnel? `webapp/` is the same council,
