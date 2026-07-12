@@ -106,7 +106,7 @@ export async function readMessages(room: string, since = 0): Promise<Message[]> 
 
 export async function postMessage(
   room: string,
-  msg: { agent: string; content: string; kind?: Message["kind"]; refs?: string[] }
+  msg: { agent: string; content: string; kind?: Message["kind"]; refs?: string[]; ts?: number }
 ): Promise<Message> {
   assertSafeName(room);
   assertSafeName(msg.agent);
@@ -121,7 +121,7 @@ export async function postMessage(
   const record: Message = {
     room,
     seq,
-    ts: Date.now() / 1000,
+    ts: typeof msg.ts === "number" ? msg.ts : Date.now() / 1000,
     agent: msg.agent,
     kind: msg.kind ?? "chat",
     content: msg.content,

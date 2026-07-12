@@ -66,6 +66,8 @@ class MsgIn(BaseModel):
     content: str
     kind: str = "chat"          # chat | decision | system | file
     refs: list[str] = []        # filenames or decision ids referenced
+    ts: float | None = None     # optional original timestamp (for replication);
+                                # server stamps now() when omitted
 
 
 class PresenceIn(BaseModel):
@@ -193,8 +195,9 @@ async def post_message(room: str, msg: MsgIn, request: Request):
     d = _room_dir(room)
     f = d / "messages.jsonl"
     seq = sum(1 for _ in f.open(encoding="utf-8")) if f.exists() else 0
-    record = {"seq": seq + 1, "ts": time.time(), "agent": _safe(msg.agent),
-              "kind": msg.kind, "content": msg.content, "refs": msg.refs}
+    record = {"seq": seq + 1, "ts": msg.ts if msg.ts is not None else time.time(),
+              "agent": _safe(msg.agent), "kind": msg.kind,
+              "content": msg.content, "refs": msg.refs}
     with f.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
     for q in _subscribers.get(room, []):
