@@ -149,9 +149,15 @@ def list_rooms(request: Request):
 
 
 @app.get("/api/rooms/{room}/messages")
-def get_messages(room: str, request: Request, since: int = 0):
+def get_messages(room: str, request: Request, since: int = 0, limit: int | None = None):
     _check_key(request)
-    return _read_messages(room, since)
+    msgs = _read_messages(room, since)
+    # Parity with the hosted webapp's read cap: when a caller asks for a bounded
+    # view, return only the most-recent `limit`. No default cap here — the local
+    # JSONL is small and the CLI watch reads without a limit and expects all.
+    if limit and limit > 0:
+        msgs = msgs[-limit:]
+    return msgs
 
 
 @app.get("/api/rooms/{room}/presence")

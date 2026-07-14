@@ -104,32 +104,75 @@ async function claims(): Promise<Collection<Claim>> {
   return (await db()).collection<Claim>("claims");
 }
 
+// Hard ceiling on how many messages one read returns. A pathologically large
+// room (e.g. a runaway sync flooding thousands of multi-KB briefs) must never
+// force an unbounded, multi-megabyte response that trips the serverless
+// payload/time limit — so reads return at most the most-recent MAX_MESSAGES.
+export const DEFAULT_MESSAGE_LIMIT = 500;
+export const MAX_MESSAGE_LIMIT = 1000;
+
+// Ensure the compound index that keeps message reads (filtered by room, sorted
+// by seq) off a collection scan — without it, a large `messages` collection
+// makes even an empty-result query time out. Cached so it runs at most once per
+// warm process; createIndex is idempotent.
+let indexesPromise: Promise<void> | null = null;
+function ensureIndexes(): Promise<void> {
+  if (!indexesPromise) {
+    indexesPromise = (async () => {
+      await (await messages()).createIndex({ room: 1, seq: 1 });
+    })().catch((e) => {
+      indexesPromise = null; // let a later call retry after a transient failure
+      throw e;
+    });
+  }
+  return indexesPromise;
+}
+
 export async function listRooms(): Promise<
   { room: string; messages: number; agents: string[]; last: number | null }[]
 > {
+  await ensureIndexes();
   const col = await messages();
   const rooms = await col.distinct("room");
   const out = [];
   for (const room of rooms.sort()) {
-    const msgs = await col.find({ room }).sort({ seq: 1 }).toArray();
-    const agents = Array.from(new Set(msgs.map((m) => m.agent))).sort();
-    out.push({
-      room,
-      messages: msgs.length,
-      agents,
-      last: msgs.length ? msgs[msgs.length - 1].ts : null,
-    });
+    // Count and last-message lookups are server-side and index-friendly — never
+    // load the whole room into memory (a huge room would blow the heap).
+    const count = await col.countDocuments({ room });
+    const lastDoc = await col
+      .find({ room }, { projection: { _id: 0, ts: 1 } })
+      .sort({ seq: -1 })
+      .limit(1)
+      .next();
+    const agents = (await col.distinct("agent", { room })).sort();
+    out.push({ room, messages: count, agents, last: lastDoc ? lastDoc.ts : null });
   }
   return out;
 }
 
-export async function readMessages(room: string, since = 0): Promise<Message[]> {
+export async function readMessages(
+  room: string,
+  since = 0,
+  limit?: number
+): Promise<Message[]> {
   assertSafeName(room);
+  await ensureIndexes();
   const col = await messages();
-  return col
+  const cap = Math.min(
+    limit && limit > 0 ? limit : DEFAULT_MESSAGE_LIMIT,
+    MAX_MESSAGE_LIMIT
+  );
+  // Return the most-recent `cap` messages in the range: sort descending, take
+  // `cap` (index-covered, bounded), then reverse to the ascending order clients
+  // expect. Incremental pollers (since=lastSeq) see small deltas as before; an
+  // initial since=0 load on a huge room gets a bounded tail instead of timing
+  // out or returning tens of MB.
+  const docs = await col
     .find({ room, seq: { $gt: since } }, { projection: { _id: 0 } })
-    .sort({ seq: 1 })
+    .sort({ seq: -1 })
+    .limit(cap)
     .toArray();
+  return docs.reverse();
 }
 
 export async function postMessage(
