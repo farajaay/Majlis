@@ -6,8 +6,10 @@ export async function GET(req: NextRequest, { params }: { params: { room: string
   const id = await resolveIdentity(req);
   if (!id) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const since = Number(req.nextUrl.searchParams.get("since") ?? "0") || 0;
+  const limitRaw = Number(req.nextUrl.searchParams.get("limit") ?? "");
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? limitRaw : undefined;
   try {
-    return NextResponse.json(await readMessages(params.room, since));
+    return NextResponse.json(await readMessages(params.room, since, limit));
   } catch {
     return NextResponse.json({ error: "invalid room" }, { status: 400 });
   }
