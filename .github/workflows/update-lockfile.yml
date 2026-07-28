@@ -1,11 +1,12 @@
 name: Update Lockfile
 
+# Automatic triggers disabled — manual runs only. To re-enable, restore:
+#   push:
+#     branches:
+#       - main
+#     paths:
+#       - 'webapp/package.json'
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'webapp/package.json'
   workflow_dispatch:
 
 jobs:

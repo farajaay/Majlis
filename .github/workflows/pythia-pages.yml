@@ -11,16 +11,17 @@ name: PYTHIA public page
 # add the secret MAJLIS_DST_TOKEN (a PAT in ALLOWED_GITHUB_LOGINS). Without it
 # the page still builds and simply shows "no data yet".
 
+# Automatic triggers disabled — manual runs only. To re-enable, restore:
+#   schedule:
+#     - cron: "23 * * * *"      # hourly
+#   push:
+#     branches: [main]
+#     paths:
+#       - "pages/pythia/**"
+#       - "scripts/snapshot_oracle.py"
+#       - ".github/workflows/pythia-pages.yml"
 on:
-  schedule:
-    - cron: "23 * * * *"      # hourly
   workflow_dispatch: {}
-  push:
-    branches: [main]
-    paths:
-      - "pages/pythia/**"
-      - "scripts/snapshot_oracle.py"
-      - ".github/workflows/pythia-pages.yml"
 
 permissions:
   contents: read

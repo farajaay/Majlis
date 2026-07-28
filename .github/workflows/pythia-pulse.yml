@@ -13,9 +13,10 @@ name: PYTHIA pulse
 #
 # Until both are set the run is a clean no-op (it never posts fabricated data).
 
+# Automatic triggers disabled — manual runs only. To re-enable, restore:
+#   schedule:
+#     - cron: "17 * * * *"     # hourly, at :17 (off the congested top-of-hour)
 on:
-  schedule:
-    - cron: "17 * * * *"     # hourly, at :17 (off the congested top-of-hour)
   workflow_dispatch: {}       # run on demand from the Actions tab
 
 concurrency:
